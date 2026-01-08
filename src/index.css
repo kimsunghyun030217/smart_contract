@@ -1,0 +1,107 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.8;
+  }
+}
+
+input:focus {
+  border-color: #10b981 !important;
+  background-color: white !important;
+  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.1) !important;
+}
+
+.signup-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 15px 35px rgba(16, 185, 129, 0.4);
+}
+
+.signup-button:active {
+  transform: translateY(0);
+}
+
+a {
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+a:hover {
+  color: #059669 !important;
+}
+
+/* 기존 코드에 추가 */
+
+.login-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 15px 35px rgba(16, 185, 129, 0.4);
+}
+
+.login-button:active {
+  transform: translateY(0);
+}
+
+/* 기존 코드 아래에 추가 */
+
+.stat-icon-green:hover,
+.stat-icon-yellow:hover,
+.stat-icon-blue:hover,
+.stat-icon-purple:hover {
+  transform: scale(1.1) rotate(5deg);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+button[style*="navItem"]:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+
+button[style*="logoutBtn"]:hover {
+  background: rgba(239, 68, 68, 0.2) !important;
+  border-color: rgba(239, 68, 68, 0.5) !important;
+}
+
+button[style*="notificationBtn"]:hover {
+  border-color: #10b981 !important;
+  transform: scale(1.05);
+}
+
+div[style*="statCard"]:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1);
+  border-color: #10b981;
+}
+
+div[style*="transactionItem"]:hover {
+  background: #f1f5f9 !important;
+  transform: translateX(4px);
+}
+
+button[style*="actionCard"]:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1);
+  border-color: #10b981;
+}
