@@ -5,14 +5,39 @@ function Signup() {
   const [userId, setUserId] = useState("");
   const [password, setPassword] = useState("");
 
-  const handleSignup = (e) => {
-    e.preventDefault();
-
-    const userData = { userId, password };
-    localStorage.setItem("user", JSON.stringify(userData));
-
-    alert("회원가입 완료!");
+  const handleSignup = async (e) => {
+  e.preventDefault();
+  
+  try {
+    // 백엔드로 회원가입 요청
+    const response = await fetch('http://localhost:8080/api/auth/signup', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        username: userId,     // userId → username으로 변경
+        password: password
+      })
+    });
+    
+    const data = await response.json();
+    
+    if (data.success) {
+      alert("회원가입 성공! 🎉");
+      // localStorage에도 저장 (선택사항)
+      localStorage.setItem("user", JSON.stringify({ userId, password }));
+      // 로그인 페이지로 이동 (선택사항)
+      // navigate('/login');
+    } else {
+      alert(data.message || "회원가입 실패!");
+    }
+  } catch (error) {
+    console.error('회원가입 에러:', error);
+    alert("서버와 통신 중 오류가 발생했습니다.");
+    }
   };
+
 
   return (
     <div style={styles.container}>
