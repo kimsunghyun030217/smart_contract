@@ -1,26 +1,47 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 function Login() {
   const [userId, setUserId] = useState("");
   const [password, setPassword] = useState("");
+  const navigate = useNavigate();
 
-  const handleLogin = (e) => {
-    e.preventDefault();
+  const handleLogin = async (e) => {
+  e.preventDefault();
+  
+  try {
+    // 백엔드로 로그인 요청
+    const response = await fetch('http://localhost:8080/api/auth/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        username: userId,
+        password: password
+      })
+    });
+    
+    const data = await response.json();
+    
+    if (data.success) {
+      alert(`${data.username}님, 로그인 성공! 🎉`);
 
-    const savedUser = JSON.parse(localStorage.getItem("user"));
-
-    if (!savedUser) {
-      alert("가입된 계정이 없습니다.");
-      return;
-    }
-
-    if (savedUser.userId === userId && savedUser.password === password) {
-      alert("로그인 성공!");
+      localStorage.setItem("token",data.token)
+      localStorage.setItem("username",data.username)
+      
+      console.log('JWT Token : ', data.token);
+      console.log('마지막 로그인:', data.lastLoginAt);
+      navigate('/dashboard'); //로그인 이후 대시보드 페이지로 이동
     } else {
-      alert("아이디 또는 비밀번호가 올바르지 않습니다.");
+      alert(data.message);
     }
-  };
+  } catch (error) {
+    console.error('로그인 에러:', error);
+    alert("서버와 통신 중 오류가 발생했습니다.");
+  }
+};
+
 
   return (
     <div style={styles.container}>
