@@ -4,11 +4,15 @@ import { useNavigate } from "react-router-dom";
 function Dashboard() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [tradeMode, setTradeMode] = useState("sell"); // 'sell' or 'buy'
+  
   const [energyData] = useState({
-    production: 45.8,
-    consumption: 32.4,
-    trading: 13.4,
-    savings: 156.7,
+    availableEnergy: 45.8, // 판매 가능한 에너지
+    currentPrice: 1600, // 현재 kWh당 가격
+    todayEarnings: 12400, // 오늘 수익
+    monthlyEarnings: 156700, // 월 수익
+    demandEnergy: 32.4, // 필요한 에너지
+    estimatedCost: 51840, // 예상 비용
   });
 
   const handleLogout = () => {
@@ -22,7 +26,7 @@ function Dashboard() {
       {/* Sidebar */}
       <div style={styles.sidebar}>
         <div style={styles.logo}>
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
             <path d="M13 2L3 14h8l-1 8 10-12h-8l1-8z" fill="url(#gradient)" stroke="url(#gradient)" strokeWidth="2"/>
             <defs>
               <linearGradient id="gradient" x1="3" y1="2" x2="21" y2="22">
@@ -48,24 +52,48 @@ function Dashboard() {
             <span>대시보드</span>
           </button>
 
+          {/* 판매/구매 네비게이션 */}
+          <div style={styles.navDivider}>거래</div>
+          
           <button
-            style={{...styles.navItem, ...(activeTab === "trading" && styles.navItemActive)}}
-            onClick={() => setActiveTab("trading")}
+            style={{...styles.navItem, ...(activeTab === "sell" && styles.navItemActive)}}
+            onClick={() => {
+              setActiveTab("sell");
+              setTradeMode("sell");
+            }}
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-              <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M8.5 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM20 8v6M23 11l-3 3-3-3" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+              <path d="M13 2L3 14h8l-1 8 10-12h-8l1-8z" fill="none" stroke="currentColor" strokeWidth="2"/>
+              <path d="M12 8v8M8 12h8" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
             </svg>
-            <span>에너지 거래</span>
+            <span>에너지 판매</span>
           </button>
 
           <button
-            style={{...styles.navItem, ...(activeTab === "production" && styles.navItemActive)}}
-            onClick={() => setActiveTab("production")}
+            style={{...styles.navItem, ...(activeTab === "buy" && styles.navItemActive)}}
+            onClick={() => {
+              setActiveTab("buy");
+              setTradeMode("buy");
+            }}
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-              <path d="M12 2v20M17 7H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+              <circle cx="9" cy="9" r="7" stroke="currentColor" strokeWidth="2"/>
+              <path d="M9 6v6l4 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
             </svg>
-            <span>생산 관리</span>
+            <span>에너지 구매</span>
+          </button>
+
+          <div style={styles.navDivider}>기타</div>
+
+          <button
+            style={{...styles.navItem, ...(activeTab === "history" && styles.navItemActive)}}
+            onClick={() => setActiveTab("history")}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" strokeWidth="2"/>
+              <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" stroke="currentColor" strokeWidth="2"/>
+            </svg>
+            <span>거래 내역</span>
           </button>
 
           <button
@@ -79,15 +107,16 @@ function Dashboard() {
           </button>
 
           <button
-            style={{...styles.navItem, ...(activeTab === "settings" && styles.navItemActive)}}
-            onClick={() => setActiveTab("settings")}
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-              <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2"/>
-              <path d="M12 1v6m0 6v6M23 12h-6m-6 0H1" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-            </svg>
-            <span>설정</span>
-          </button>
+          style={styles.navItem}
+          onClick={() => navigate("/mypage")}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="7" r="4" stroke="currentColor" strokeWidth="2"/>
+            <path d="M5.5 21c0-3.3 2.9-6 6.5-6s6.5 2.7 6.5 6" stroke="currentColor" strokeWidth="2"/>
+          </svg>
+          <span>마이페이지</span>
+        </button>
+
         </nav>
 
         <button style={styles.logoutBtn} onClick={handleLogout}>
@@ -103,8 +132,14 @@ function Dashboard() {
         {/* Header */}
         <div style={styles.header}>
           <div>
-            <h1 style={styles.headerTitle}>안녕하세요! 👋</h1>
-            <p style={styles.headerSubtitle}>오늘도 깨끗한 에너지로 시작하세요</p>
+            <h1 style={styles.headerTitle}>
+              {tradeMode === "sell" ? "에너지 판매 🔋" : "에너지 구매 ⚡"}
+            </h1>
+            <p style={styles.headerSubtitle}>
+              {tradeMode === "sell" 
+                ? "남는 에너지를 이웃에게 판매하세요" 
+                : "필요한 에너지를 저렴하게 구매하세요"}
+            </p>
           </div>
           <div style={styles.headerRight}>
             <button style={styles.notificationBtn}>
@@ -117,189 +152,226 @@ function Dashboard() {
               <div style={styles.avatar}>U</div>
               <div>
                 <div style={styles.profileName}>사용자</div>
-                <div style={styles.profileRole}>에너지 생산자</div>
+                <div style={styles.profileRole}>
+                  {tradeMode === "sell" ? "에너지 판매자" : "에너지 구매자"}
+                </div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Stats Cards */}
-        <div style={styles.statsGrid}>
-          <div style={styles.statCard}>
-            <div style={styles.statIcon} className="stat-icon-green">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                <path d="M13 2L3 14h8l-1 8 10-12h-8l1-8z" fill="#10b981" stroke="#10b981" strokeWidth="2"/>
-              </svg>
-            </div>
+        {/* 판매/구매 모드 토글 */}
+        <div style={styles.modeToggle}>
+          <button
+            style={{
+              ...styles.modeBtn,
+              ...(tradeMode === "sell" && styles.modeBtnActive),
+              background: tradeMode === "sell" 
+                ? "linear-gradient(135deg, #10b981 0%, #059669 100%)" 
+                : "white"
+            }}
+            onClick={() => setTradeMode("sell")}
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+              <path d="M13 2L3 14h8l-1 8 10-12h-8l1-8z" fill="none" stroke="currentColor" strokeWidth="2"/>
+              <path d="M12 8v8M8 12h8" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+            </svg>
             <div>
-              <div style={styles.statLabel}>총 생산량</div>
-              <div style={styles.statValue}>{energyData.production} kWh</div>
-              <div style={styles.statChange}>
-                <span style={styles.statChangeUp}>↑ 12.5%</span> 지난주 대비
-              </div>
+              <div style={styles.modeBtnTitle}>판매하기</div>
+              <div style={styles.modeBtnDesc}>남는 에너지 판매</div>
             </div>
-          </div>
+          </button>
 
-          <div style={styles.statCard}>
-            <div style={{...styles.statIcon, background: "linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)"}} className="stat-icon-yellow">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                <circle cx="12" cy="12" r="5" fill="#f59e0b" stroke="#f59e0b" strokeWidth="2"/>
-                <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round"/>
-              </svg>
-            </div>
+          <button
+            style={{
+              ...styles.modeBtn,
+              ...(tradeMode === "buy" && styles.modeBtnActive),
+              background: tradeMode === "buy" 
+                ? "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)" 
+                : "white"
+            }}
+            onClick={() => setTradeMode("buy")}
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+              <circle cx="9" cy="9" r="7" stroke="currentColor" strokeWidth="2"/>
+              <path d="M9 6v6l4 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+            </svg>
             <div>
-              <div style={styles.statLabel}>소비량</div>
-              <div style={styles.statValue}>{energyData.consumption} kWh</div>
-              <div style={styles.statChange}>
-                <span style={styles.statChangeDown}>↓ 5.2%</span> 지난주 대비
-              </div>
+              <div style={styles.modeBtnTitle}>구매하기</div>
+              <div style={styles.modeBtnDesc}>필요한 에너지 구매</div>
             </div>
-          </div>
-
-          <div style={styles.statCard}>
-            <div style={{...styles.statIcon, background: "linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%)"}} className="stat-icon-blue">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M12.5 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM20 8v6M23 11l-3 3-3-3" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round"/>
-              </svg>
-            </div>
-            <div>
-              <div style={styles.statLabel}>거래량</div>
-              <div style={styles.statValue}>{energyData.trading} kWh</div>
-              <div style={styles.statChange}>
-                <span style={styles.statChangeUp}>↑ 8.7%</span> 지난주 대비
-              </div>
-            </div>
-          </div>
-
-          <div style={styles.statCard}>
-            <div style={{...styles.statIcon, background: "linear-gradient(135deg, #f3e8ff 0%, #e9d5ff 100%)"}} className="stat-icon-purple">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                <path d="M12 2v20M17 7H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" stroke="#a855f7" strokeWidth="2" strokeLinecap="round"/>
-              </svg>
-            </div>
-            <div>
-              <div style={styles.statLabel}>총 수익</div>
-              <div style={styles.statValue}>₩{energyData.savings.toLocaleString()}</div>
-              <div style={styles.statChange}>
-                <span style={styles.statChangeUp}>↑ 15.3%</span> 지난주 대비
-              </div>
-            </div>
-          </div>
+          </button>
         </div>
 
-        {/* Charts Section */}
-        <div style={styles.chartsGrid}>
-          <div style={styles.chartCard}>
-            <div style={styles.chartHeader}>
-              <h3 style={styles.chartTitle}>에너지 생산/소비 추이</h3>
-              <select style={styles.chartSelect}>
-                <option>최근 7일</option>
-                <option>최근 30일</option>
-                <option>최근 90일</option>
-              </select>
-            </div>
-            <div style={styles.chartPlaceholder}>
-              <svg width="100%" height="200" viewBox="0 0 400 200">
-                <defs>
-                  <linearGradient id="gradientGreen" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#10b981" stopOpacity="0.3"/>
-                    <stop offset="100%" stopColor="#10b981" stopOpacity="0"/>
-                  </linearGradient>
-                  <linearGradient id="gradientBlue" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.3"/>
-                    <stop offset="100%" stopColor="#3b82f6" stopOpacity="0"/>
-                  </linearGradient>
-                </defs>
-                <path d="M 0 150 Q 50 120 100 130 T 200 110 T 300 90 T 400 100" stroke="#10b981" strokeWidth="3" fill="url(#gradientGreen)"/>
-                <path d="M 0 170 Q 50 160 100 165 T 200 150 T 300 140 T 400 145" stroke="#3b82f6" strokeWidth="3" fill="url(#gradientBlue)"/>
-              </svg>
-              <div style={styles.chartLegend}>
-                <div style={styles.legendItem}>
-                  <div style={{...styles.legendDot, background: "#10b981"}}></div>
-                  <span>생산량</span>
-                </div>
-                <div style={styles.legendItem}>
-                  <div style={{...styles.legendDot, background: "#3b82f6"}}></div>
-                  <span>소비량</span>
+        {/* 판매 모드 콘텐츠 */}
+        {tradeMode === "sell" && (
+          <>
+            {/* 판매 정보 카드 */}
+            <div style={styles.infoGrid}>
+              <div style={styles.infoCard}>
+                <div style={styles.infoLabel}>판매 가능한 에너지</div>
+                <div style={styles.infoValue}>{energyData.availableEnergy} kWh</div>
+                <div style={styles.infoDesc}>현재 판매 가능</div>
+              </div>
+
+              <div style={styles.infoCard}>
+                <div style={styles.infoLabel}>현재 판매 가격</div>
+                <div style={styles.infoValue}>₩{energyData.currentPrice}/kWh</div>
+                <div style={styles.infoDesc}>실시간 시장 가격</div>
+              </div>
+
+              <div style={styles.infoCard}>
+                <div style={styles.infoLabel}>오늘 수익</div>
+                <div style={styles.infoValue}>₩{energyData.todayEarnings.toLocaleString()}</div>
+                <div style={styles.infoChange}>
+                  <span style={styles.infoChangeUp}>↑ 15.3%</span> 어제 대비
                 </div>
               </div>
             </div>
-          </div>
 
-          <div style={styles.chartCard}>
-            <div style={styles.chartHeader}>
-              <h3 style={styles.chartTitle}>최근 거래 내역</h3>
-              <a href="#" style={styles.viewAll}>전체보기 →</a>
-            </div>
-            <div style={styles.transactionList}>
-              {[
-                { type: "판매", amount: "5.2 kWh", price: "₩8,400", time: "2시간 전", status: "완료" },
-                { type: "구매", amount: "3.1 kWh", price: "₩4,960", time: "5시간 전", status: "완료" },
-                { type: "판매", amount: "7.8 kWh", price: "₩12,480", time: "1일 전", status: "완료" },
-                { type: "판매", amount: "4.5 kWh", price: "₩7,200", time: "1일 전", status: "대기" },
-              ].map((tx, idx) => (
-                <div key={idx} style={styles.transactionItem}>
-                  <div style={styles.transactionLeft}>
-                    <div style={{
-                      ...styles.transactionIcon,
-                      background: tx.type === "판매" ? "linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)" : "linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%)"
-                    }}>
-                      {tx.type === "판매" ? "↑" : "↓"}
-                    </div>
-                    <div>
-                      <div style={styles.transactionType}>{tx.type}</div>
-                      <div style={styles.transactionAmount}>{tx.amount}</div>
-                    </div>
-                  </div>
-                  <div style={styles.transactionRight}>
-                    <div style={styles.transactionPrice}>{tx.price}</div>
-                    <div style={styles.transactionTime}>{tx.time}</div>
+            {/* 판매 액션 */}
+            <div style={styles.actionSection}>
+              <div style={styles.actionCard}>
+                <h3 style={styles.actionTitle}>빠른 판매</h3>
+                <p style={styles.actionDesc}>현재 시장 가격으로 즉시 판매</p>
+                <div style={styles.inputGroup}>
+                  <input 
+                    type="number" 
+                    placeholder="판매할 에너지량 (kWh)" 
+                    style={styles.input}
+                  />
+                  <div style={styles.priceInfo}>
+                    예상 수익: ₩{(energyData.availableEnergy * energyData.currentPrice).toLocaleString()}
                   </div>
                 </div>
-              ))}
+                <button style={{...styles.primaryBtn, background: "linear-gradient(135deg, #10b981 0%, #059669 100%)"}}>
+                  즉시 판매하기
+                </button>
+              </div>
+
+              <div style={styles.actionCard}>
+                <h3 style={styles.actionTitle}>가격 설정 판매</h3>
+                <p style={styles.actionDesc}>원하는 가격으로 판매 등록</p>
+                <div style={styles.inputGroup}>
+                  <input 
+                    type="number" 
+                    placeholder="판매할 에너지량 (kWh)" 
+                    style={styles.input}
+                  />
+                  <input 
+                    type="number" 
+                    placeholder="희망 가격 (₩/kWh)" 
+                    style={styles.input}
+                  />
+                </div>
+                <button style={{...styles.secondaryBtn}}>
+                  판매 등록하기
+                </button>
+              </div>
             </div>
-          </div>
-        </div>
+          </>
+        )}
 
-        {/* Quick Actions */}
-        <div style={styles.quickActions}>
-          <h3 style={styles.sectionTitle}>빠른 실행</h3>
-          <div style={styles.actionsGrid}>
-            <button style={styles.actionCard}>
-              <div style={{...styles.actionIcon, background: "linear-gradient(135deg, #10b981 0%, #059669 100%)"}}>
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                  <path d="M12 5v14M5 12h14" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-                </svg>
+        {/* 구매 모드 콘텐츠 */}
+        {tradeMode === "buy" && (
+          <>
+            {/* 구매 정보 카드 */}
+            <div style={styles.infoGrid}>
+              <div style={styles.infoCard}>
+                <div style={styles.infoLabel}>필요한 에너지</div>
+                <div style={styles.infoValue}>{energyData.demandEnergy} kWh</div>
+                <div style={styles.infoDesc}>이번 주 예상 필요량</div>
               </div>
-              <div style={styles.actionText}>에너지 판매</div>
-            </button>
 
-            <button style={styles.actionCard}>
-              <div style={{...styles.actionIcon, background: "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)"}}>
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                  <path d="M3 3h18v18H3zM9 9h6v6H9z" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-                </svg>
+              <div style={styles.infoCard}>
+                <div style={styles.infoLabel}>현재 구매 가격</div>
+                <div style={styles.infoValue}>₩{energyData.currentPrice}/kWh</div>
+                <div style={styles.infoDesc}>실시간 시장 가격</div>
               </div>
-              <div style={styles.actionText}>에너지 구매</div>
-            </button>
 
-            <button style={styles.actionCard}>
-              <div style={{...styles.actionIcon, background: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)"}}>
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-                </svg>
+              <div style={styles.infoCard}>
+                <div style={styles.infoLabel}>예상 비용</div>
+                <div style={styles.infoValue}>₩{energyData.estimatedCost.toLocaleString()}</div>
+                <div style={styles.infoChange}>
+                  <span style={styles.infoChangeDown}>↓ 8.2%</span> 지난주 대비
+                </div>
               </div>
-              <div style={styles.actionText}>거래 내역</div>
-            </button>
+            </div>
 
-            <button style={styles.actionCard}>
-              <div style={{...styles.actionIcon, background: "linear-gradient(135deg, #a855f7 0%, #9333ea 100%)"}}>
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                  <path d="M18 20V10M12 20V4M6 20v-6" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-                </svg>
+            {/* 구매 액션 */}
+            <div style={styles.actionSection}>
+              <div style={styles.actionCard}>
+                <h3 style={styles.actionTitle}>빠른 구매</h3>
+                <p style={styles.actionDesc}>현재 시장 가격으로 즉시 구매</p>
+                <div style={styles.inputGroup}>
+                  <input 
+                    type="number" 
+                    placeholder="구매할 에너지량 (kWh)" 
+                    style={styles.input}
+                  />
+                  <div style={styles.priceInfo}>
+                    예상 비용: ₩{(energyData.demandEnergy * energyData.currentPrice).toLocaleString()}
+                  </div>
+                </div>
+                <button style={{...styles.primaryBtn, background: "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)"}}>
+                  즉시 구매하기
+                </button>
               </div>
-              <div style={styles.actionText}>상세 분석</div>
-            </button>
+
+              <div style={styles.actionCard}>
+                <h3 style={styles.actionTitle}>가격 설정 구매</h3>
+                <p style={styles.actionDesc}>원하는 가격으로 구매 주문</p>
+                <div style={styles.inputGroup}>
+                  <input 
+                    type="number" 
+                    placeholder="구매할 에너지량 (kWh)" 
+                    style={styles.input}
+                  />
+                  <input 
+                    type="number" 
+                    placeholder="희망 가격 (₩/kWh)" 
+                    style={styles.input}
+                  />
+                </div>
+                <button style={{...styles.secondaryBtn}}>
+                  구매 주문하기
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* 최근 거래 내역 */}
+        <div style={styles.recentSection}>
+          <h3 style={styles.sectionTitle}>최근 거래 내역</h3>
+          <div style={styles.transactionList}>
+            {[
+              { type: "판매", amount: "5.2 kWh", price: "₩8,400", time: "2시간 전", status: "완료" },
+              { type: "구매", amount: "3.1 kWh", price: "₩4,960", time: "5시간 전", status: "완료" },
+              { type: "판매", amount: "7.8 kWh", price: "₩12,480", time: "1일 전", status: "완료" },
+            ].map((tx, idx) => (
+              <div key={idx} style={styles.transactionItem}>
+                <div style={styles.transactionLeft}>
+                  <div style={{
+                    ...styles.transactionIcon,
+                    background: tx.type === "판매" 
+                      ? "linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)" 
+                      : "linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%)",
+                    color: tx.type === "판매" ? "#10b981" : "#3b82f6"
+                  }}>
+                    {tx.type === "판매" ? "↑" : "↓"}
+                  </div>
+                  <div>
+                    <div style={styles.transactionType}>{tx.type}</div>
+                    <div style={styles.transactionAmount}>{tx.amount}</div>
+                  </div>
+                </div>
+                <div style={styles.transactionRight}>
+                  <div style={styles.transactionPrice}>{tx.price}</div>
+                  <div style={styles.transactionTime}>{tx.time}</div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -325,7 +397,7 @@ const styles = {
     display: "flex",
     alignItems: "center",
     gap: "12px",
-    marginBottom: "48px",
+    marginBottom: "32px",
     paddingBottom: "24px",
     borderBottom: "1px solid rgba(255, 255, 255, 0.1)",
   },
@@ -340,6 +412,15 @@ const styles = {
     flexDirection: "column",
     gap: "8px",
     flex: 1,
+  },
+  navDivider: {
+    fontSize: "11px",
+    fontWeight: "700",
+    color: "#64748b",
+    textTransform: "uppercase",
+    letterSpacing: "1px",
+    padding: "16px 16px 8px 16px",
+    marginTop: "8px",
   },
   navItem: {
     display: "flex",
@@ -460,116 +541,162 @@ const styles = {
     fontSize: "12px",
     color: "#64748b",
   },
-  statsGrid: {
+  // 모드 토글
+  modeToggle: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
-    gap: "24px",
+    gridTemplateColumns: "1fr 1fr",
+    gap: "16px",
     marginBottom: "32px",
   },
-  statCard: {
+  modeBtn: {
+    display: "flex",
+    alignItems: "center",
+    gap: "16px",
+    padding: "24px",
+    border: "2px solid #e2e8f0",
+    borderRadius: "16px",
+    cursor: "pointer",
+    transition: "all 0.3s",
+    fontSize: "16px",
+  },
+  modeBtnActive: {
+    color: "white",
+    border: "2px solid transparent",
+    boxShadow: "0 8px 24px rgba(0, 0, 0, 0.15)",
+  },
+  modeBtnTitle: {
+    fontSize: "18px",
+    fontWeight: "700",
+    marginBottom: "4px",
+  },
+  modeBtnDesc: {
+    fontSize: "13px",
+    opacity: 0.8,
+  },
+  // 정보 카드
+  infoGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
+    gap: "20px",
+    marginBottom: "32px",
+  },
+  infoCard: {
     background: "white",
     padding: "24px",
     borderRadius: "16px",
     border: "2px solid #e2e8f0",
-    display: "flex",
-    gap: "16px",
-    transition: "all 0.3s",
   },
-  statIcon: {
-    width: "56px",
-    height: "56px",
-    borderRadius: "14px",
-    background: "linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-  },
-  statLabel: {
+  infoLabel: {
     fontSize: "13px",
     color: "#64748b",
     fontWeight: "600",
-    marginBottom: "8px",
+    marginBottom: "12px",
   },
-  statValue: {
-    fontSize: "28px",
+  infoValue: {
+    fontSize: "32px",
     fontWeight: "800",
     color: "#0f172a",
     marginBottom: "8px",
   },
-  statChange: {
+  infoDesc: {
+    fontSize: "13px",
+    color: "#94a3b8",
+  },
+  infoChange: {
     fontSize: "13px",
     color: "#64748b",
   },
-  statChangeUp: {
+  infoChangeUp: {
     color: "#10b981",
     fontWeight: "700",
   },
-  statChangeDown: {
-    color: "#ef4444",
+  infoChangeDown: {
+    color: "#3b82f6",
     fontWeight: "700",
   },
-  chartsGrid: {
+  // 액션 섹션
+  actionSection: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))",
     gap: "24px",
     marginBottom: "32px",
   },
-  chartCard: {
+  actionCard: {
     background: "white",
-    padding: "24px",
+    padding: "32px",
     borderRadius: "16px",
     border: "2px solid #e2e8f0",
   },
-  chartHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: "24px",
-  },
-  chartTitle: {
-    fontSize: "18px",
+  actionTitle: {
+    fontSize: "20px",
     fontWeight: "700",
     color: "#0f172a",
-    margin: 0,
+    margin: "0 0 8px 0",
   },
-  chartSelect: {
-    padding: "8px 12px",
-    borderRadius: "8px",
-    border: "2px solid #e2e8f0",
-    fontSize: "13px",
-    fontWeight: "600",
+  actionDesc: {
+    fontSize: "14px",
     color: "#64748b",
-    cursor: "pointer",
-    background: "white",
+    margin: "0 0 24px 0",
   },
-  viewAll: {
+  inputGroup: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "12px",
+    marginBottom: "20px",
+  },
+  input: {
+    padding: "14px 16px",
+    fontSize: "15px",
+    border: "2px solid #e2e8f0",
+    borderRadius: "12px",
+    fontWeight: "600",
+    outline: "none",
+    transition: "all 0.2s",
+  },
+  priceInfo: {
+    padding: "12px 16px",
+    background: "#f8fafc",
+    borderRadius: "10px",
     fontSize: "14px",
     fontWeight: "600",
-    color: "#10b981",
-    textDecoration: "none",
+    color: "#0f172a",
   },
-  chartPlaceholder: {
-    position: "relative",
+  primaryBtn: {
+    width: "100%",
+    padding: "16px",
+    fontSize: "16px",
+    fontWeight: "700",
+    color: "white",
+    border: "none",
+    borderRadius: "12px",
+    cursor: "pointer",
+    transition: "all 0.3s",
   },
-  chartLegend: {
-    display: "flex",
-    gap: "24px",
-    marginTop: "16px",
-    justifyContent: "center",
+  secondaryBtn: {
+    width: "100%",
+    padding: "16px",
+    fontSize: "16px",
+    fontWeight: "700",
+    color: "#0f172a",
+    background: "white",
+    border: "2px solid #e2e8f0",
+    borderRadius: "12px",
+    cursor: "pointer",
+    transition: "all 0.3s",
   },
-  legendItem: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    fontSize: "13px",
-    color: "#64748b",
-    fontWeight: "600",
+  // 최근 거래
+  recentSection: {
+    background: "white",
+    padding: "32px",
+    borderRadius: "16px",
+    border: "2px solid #e2e8f0",
   },
-  legendDot: {
-    width: "12px",
-    height: "12px",
-    borderRadius: "50%",
+  sectionTitle: {
+    fontSize: "20px",
+    fontWeight: "700",
+    color: "#0f172a",
+    marginBottom: "20px",
+    margin: "0 0 20px 0",
   },
   transactionList: {
     display: "flex",
@@ -620,45 +747,6 @@ const styles = {
   transactionTime: {
     fontSize: "12px",
     color: "#94a3b8",
-  },
-  quickActions: {
-    marginTop: "32px",
-  },
-  sectionTitle: {
-    fontSize: "20px",
-    fontWeight: "700",
-    color: "#0f172a",
-    marginBottom: "20px",
-  },
-  actionsGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-    gap: "16px",
-  },
-  actionCard: {
-    background: "white",
-    padding: "24px",
-    borderRadius: "16px",
-    border: "2px solid #e2e8f0",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    gap: "12px",
-    cursor: "pointer",
-    transition: "all 0.3s",
-  },
-  actionIcon: {
-    width: "56px",
-    height: "56px",
-    borderRadius: "14px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  actionText: {
-    fontSize: "15px",
-    fontWeight: "700",
-    color: "#0f172a",
   },
 };
 
