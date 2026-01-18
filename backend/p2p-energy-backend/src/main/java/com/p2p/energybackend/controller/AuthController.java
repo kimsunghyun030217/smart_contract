@@ -1,10 +1,11 @@
 package com.p2p.energybackend.controller;
-import com.p2p.energybackend.util.JwtUtil;
 
 import com.p2p.energybackend.model.User;
 import com.p2p.energybackend.service.UserService;
+import com.p2p.energybackend.util.JwtUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -15,79 +16,101 @@ import java.util.Map;
 @CrossOrigin(origins = "http://localhost:5173")
 public class AuthController {
 
-
-    
     @Autowired
     private UserService userService;
 
     @Autowired
     private JwtUtil jwtUtil;
-    
-    // 회원가입 API
+
+    // 회원가입
     @PostMapping("/signup")
     public ResponseEntity<?> signup(@RequestBody Map<String, String> request) {
         try {
             String username = request.get("username");
             String password = request.get("password");
-            
+
             User user = userService.signup(username, password);
-            
+
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
             response.put("message", "회원가입 성공!");
             response.put("username", user.getUsername());
-            
+
             return ResponseEntity.ok(response);
-            
+
         } catch (RuntimeException e) {
             Map<String, Object> response = new HashMap<>();
             response.put("success", false);
             response.put("message", e.getMessage());
-            
             return ResponseEntity.badRequest().body(response);
         }
     }
-    // 로그인 API
+
+    // 로그인
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody Map<String, String> request) {
         try {
             String username = request.get("username");
             String password = request.get("password");
-            
-            // 로그인 처리
-            User user = userService.login(username, password);
 
-            //JWT생성
+            User user = userService.login(username, password);
             String token = jwtUtil.generateToken(user.getUsername());
-            
-            // 성공 응답
+
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
             response.put("message", "로그인 성공!");
             response.put("username", user.getUsername());
-            response.put("token",token);
+            response.put("token", token);
             response.put("lastLoginAt", user.getLastLoginAt());
-            
+
             return ResponseEntity.ok(response);
-            
+
         } catch (RuntimeException e) {
-            // 실패 응답
             Map<String, Object> response = new HashMap<>();
             response.put("success", false);
             response.put("message", e.getMessage());
-            
             return ResponseEntity.badRequest().body(response);
         }
     }
-    
-    // 아이디 중복 체크 API
+
+    // 아이디 중복 체크
     @GetMapping("/check-username")
     public ResponseEntity<?> checkUsername(@RequestParam String username) {
         boolean exists = userService.isUsernameTaken(username);
-        
+
         Map<String, Object> response = new HashMap<>();
         response.put("exists", exists);
-        
+
         return ResponseEntity.ok(response);
+    }
+
+    // 비밀번호 변경 (JWT 인증 필요)
+    @PostMapping("/change-password")
+    public ResponseEntity<?> changePassword(@RequestBody Map<String, String> request,
+                                            @RequestHeader("Authorization") String authHeader) {
+
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            return ResponseEntity.status(401).body("인증 토큰이 없습니다.");
+        }
+
+        String token = authHeader.substring(7);
+        String username = jwtUtil.extractUsername(token);
+
+        User user = userService.findByUsername(username);
+        if (user == null) {
+            return ResponseEntity.status(401).body("유효하지 않은 사용자입니다.");
+        }
+
+        String currentPassword = request.get("currentPassword");
+        String newPassword = request.get("newPassword");
+
+        boolean isCorrect = userService.checkPassword(user, currentPassword);
+        if (!isCorrect) {
+            return ResponseEntity.badRequest().body("현재 비밀번호가 일치하지 않습니다.");
+        }
+
+        userService.updatePassword(user, newPassword);
+
+        return ResponseEntity.ok("비밀번호 변경 완료");
     }
 }
