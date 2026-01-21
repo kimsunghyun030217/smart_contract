@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { getCoordinates } from "../api/naverApi";
-import { changePassword } from "../api/authApi";
-import { updateLocation } from "../api/authApi";
-import { getMyInfo } from "../api/authApi";
 
-function MyPage() {
+import { getCoordinates } from "../api/naverApi";
+import { changePassword, updateLocation, getMyInfo } from "../api/authApi";
+
+import Layout from "../components/Layout";
+
+export default function MyPage() {
   const navigate = useNavigate();
 
   const [userProfile, setUserProfile] = useState({
@@ -35,7 +36,6 @@ function MyPage() {
       userId: username,
     }));
 
-    // ★★★ DB에 저장된 주소/위도/경도 불러오기 ★★★
     const fetchUserInfo = async () => {
       try {
         const data = await getMyInfo();
@@ -55,7 +55,6 @@ function MyPage() {
     fetchUserInfo();
   }, [navigate]);
 
-
   const handleLogout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("username");
@@ -66,24 +65,13 @@ function MyPage() {
   const handlePasswordChange = async () => {
     const { currentPassword, newPassword, confirmPassword } = userProfile;
 
-    if (!currentPassword) {
-      alert("현재 비밀번호를 입력해주세요");
-      return;
-    }
-
-    if (!newPassword) {
-      alert("새 비밀번호를 입력해주세요");
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      alert("새 비밀번호가 일치하지 않습니다");
-      return;
-    }
+    if (!currentPassword) return alert("현재 비밀번호를 입력해주세요");
+    if (!newPassword) return alert("새 비밀번호를 입력해주세요");
+    if (newPassword !== confirmPassword)
+      return alert("새 비밀번호가 일치하지 않습니다");
 
     try {
       await changePassword(currentPassword, newPassword);
-
       alert("비밀번호가 성공적으로 변경되었습니다");
 
       setUserProfile((prev) => ({
@@ -99,14 +87,13 @@ function MyPage() {
   };
 
   const handleAddressUpdate = async () => {
-
     if (!userProfile.address) {
       alert("주소를 입력해주세요");
       return;
     }
 
     if (!userProfile.latitude || !userProfile.longitude) {
-      alert("주소 검색을 먼저 해주세요 (위도/경도 없음)");
+      alert("주소 검색을 먼저 해주세요");
       return;
     }
 
@@ -119,13 +106,11 @@ function MyPage() {
       );
 
       alert("주소 정보가 저장되었습니다!");
-
     } catch (error) {
       console.error(error);
       alert("주소 정보 저장 실패");
     }
   };
-
 
   const handlePaymentUpdate = () => {
     if (!userProfile.paymentMethod) {
@@ -134,9 +119,6 @@ function MyPage() {
     }
 
     alert("결제 정보가 저장되었습니다");
-    console.log("결제 정보 저장:", {
-      paymentMethod: userProfile.paymentMethod,
-    });
   };
 
   const handleAddressSearch = async () => {
@@ -156,7 +138,7 @@ function MyPage() {
         }));
         alert("주소가 설정되었습니다!");
       } else {
-        alert("주소를 찾을 수 없습니다. 다시 시도해주세요.");
+        alert("주소를 찾을 수 없습니다");
       }
     } catch (error) {
       console.error(error);
@@ -165,48 +147,8 @@ function MyPage() {
   };
 
   return (
-    <div style={styles.container}>
-      <div style={styles.sidebar}>
-        <div style={styles.logo}>
-          <h2 style={styles.logoText}>P2P Energy</h2>
-        </div>
-
-        <nav style={styles.nav}>
-          <button style={styles.navItem} onClick={() => navigate("/dashboard")}>
-            <span>대시보드</span>
-          </button>
-
-          <div style={styles.navDivider}>거래</div>
-
-          <button style={styles.navItem} onClick={() => navigate("/dashboard")}>
-            <span>에너지 판매</span>
-          </button>
-
-          <button style={styles.navItem} onClick={() => navigate("/dashboard")}>
-            <span>에너지 구매</span>
-          </button>
-
-          <div style={styles.navDivider}>기타</div>
-
-          <button style={styles.navItem} onClick={() => navigate("/dashboard")}>
-            <span>거래 내역</span>
-          </button>
-
-          <button style={styles.navItem} onClick={() => navigate("/dashboard")}>
-            <span>분석</span>
-          </button>
-
-          <button style={{ ...styles.navItem, ...styles.navItemActive }}>
-            <span>마이페이지</span>
-          </button>
-        </nav>
-
-        <button style={styles.logoutBtn} onClick={handleLogout}>
-          <span>로그아웃</span>
-        </button>
-      </div>
-
-      <div style={styles.main}>
+    <Layout>
+      <div style={{ padding: "32px" }}>
         <div style={styles.header}>
           <h1 style={styles.headerTitle}>마이페이지 👤</h1>
           <p style={styles.headerSubtitle}>내 정보를 관리하세요</p>
@@ -299,6 +241,7 @@ function MyPage() {
           <div style={styles.formGrid}>
             <div style={{ ...styles.formGroup, gridColumn: "1 / -1" }}>
               <label style={styles.label}>주소</label>
+
               <div style={styles.addressInputGroup}>
                 <input
                   type="text"
@@ -312,6 +255,7 @@ function MyPage() {
                   style={styles.input}
                   placeholder="예) 서울시 강남구 테헤란로 123"
                 />
+
                 <button
                   type="button"
                   style={styles.searchBtn}
@@ -411,7 +355,7 @@ function MyPage() {
           </button>
         </div>
       </div>
-    </div>
+    </Layout>
   );
 }
 
@@ -565,5 +509,3 @@ const styles = {
     cursor: "pointer",
   },
 };
-
-export default MyPage;

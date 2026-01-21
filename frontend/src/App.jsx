@@ -1,8 +1,10 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import Signup from "./pages/Signup"; // 또는 ./Signup
-import Login from "./pages/Login";   // 또는 ./Login
-import Dashboard from "./pages/Dashboard"; // 또는 ./Dashboard
-import MyPage from './pages/MyPage';
+import Signup from "./pages/Signup";
+import Login from "./pages/Login";
+import Dashboard from "./pages/Dashboard";
+import MyPage from "./pages/MyPage";
+import SellPage from "./pages/SellPage";
+import BuyPage from "./pages/BuyPage";
 
 function App() {
   return (
@@ -10,7 +12,12 @@ function App() {
       <Routes>
         <Route path="/" element={<Signup />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/dashboard" element={<Dashboard />} /> 
+
+        <Route path="/dashboard" element={<Dashboard />} />
+
+        <Route path="/sell" element={<SellPage />} />
+        <Route path="/buy" element={<BuyPage />} />
+
         <Route path="/mypage" element={<MyPage />} />
       </Routes>
     </BrowserRouter>
