@@ -75,9 +75,11 @@ public class UserService {
     }
 
     // 주소 업데이트 
-    public void updateLocation(User user, Double latitude, Double longitude) {
+    public void updateLocation(User user, Double latitude, Double longitude, String address, String detailAddress) {
     user.setLatitude(latitude);
     user.setLongitude(longitude);
+    user.setAddress(address);
+    user.setDetailAddress(detailAddress);
     userRepository.save(user);
     }
 

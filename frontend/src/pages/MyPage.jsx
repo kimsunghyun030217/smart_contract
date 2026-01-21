@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { getCoordinates } from "../api/naverApi";
 import { changePassword } from "../api/authApi";
 import { updateLocation } from "../api/authApi";
-
+import { getMyInfo } from "../api/authApi";
 
 function MyPage() {
   const navigate = useNavigate();
@@ -34,7 +34,27 @@ function MyPage() {
       ...prev,
       userId: username,
     }));
+
+    // ★★★ DB에 저장된 주소/위도/경도 불러오기 ★★★
+    const fetchUserInfo = async () => {
+      try {
+        const data = await getMyInfo();
+
+        setUserProfile((prev) => ({
+          ...prev,
+          address: data.address || "",
+          detailAddress: data.detailAddress || "",
+          latitude: data.latitude || "",
+          longitude: data.longitude || "",
+        }));
+      } catch (error) {
+        console.error(error);
+      }
+    };
+
+    fetchUserInfo();
   }, [navigate]);
+
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -93,7 +113,9 @@ function MyPage() {
     try {
       await updateLocation(
         userProfile.latitude,
-        userProfile.longitude
+        userProfile.longitude,
+        userProfile.address,
+        userProfile.detailAddress
       );
 
       alert("주소 정보가 저장되었습니다!");

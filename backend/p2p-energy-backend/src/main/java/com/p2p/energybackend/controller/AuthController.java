@@ -133,10 +133,39 @@ public class AuthController {
 
         Double latitude = Double.valueOf(request.get("latitude").toString());
         Double longitude = Double.valueOf(request.get("longitude").toString());
+        String address = request.get("address").toString();
+        String detailAddress = request.get("detailAddress").toString();
 
-        userService.updateLocation(user, latitude, longitude);
+        userService.updateLocation(user, latitude, longitude, address, detailAddress);
 
         return ResponseEntity.ok("주소 정보 업데이트 완료");
+    }
+
+    @GetMapping("/me")
+    public ResponseEntity<?> getMyInfo(@RequestHeader("Authorization") String authHeader) {
+
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            return ResponseEntity.status(401).body("인증 토큰이 없습니다.");
+        }
+
+        String token = authHeader.substring(7);
+        String username = jwtUtil.extractUsername(token);
+
+        User user = userService.findByUsername(username);
+
+        if (user == null) {
+            return ResponseEntity.status(404).body("사용자를 찾을 수 없습니다.");
+        }
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("username", user.getUsername());
+        response.put("latitude", user.getLatitude());
+        response.put("longitude", user.getLongitude());
+        response.put("address", user.getAddress());
+        response.put("detailAddress", user.getDetailAddress());
+
+
+        return ResponseEntity.ok(response);
     }
 
 }

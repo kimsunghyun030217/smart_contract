@@ -29,6 +29,13 @@ public class User {
     @Column(name = "longitude")
     private Double longitude;
 
+    @Column(name = "address")
+    private String address;
+
+    @Column(name = "detail_address")
+    private String detailAddress;
+
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
@@ -69,4 +76,12 @@ public class User {
     public Double getLongitude() { return longitude; }
 
     public void setLongitude(Double longitude) { this.longitude = longitude; }
+
+    public String getAddress() { return address; }
+
+    public void setAddress(String address) { this.address = address; }
+
+    public String getDetailAddress() { return detailAddress; }
+
+    public void setDetailAddress(String detailAddress) { this.detailAddress = detailAddress; }
 }

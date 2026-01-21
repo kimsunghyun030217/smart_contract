@@ -44,10 +44,17 @@ export const checkUsername = async (username) => {
 };
 
 //주소 저장 
-export const updateLocation = async (latitude, longitude) => {
+export const updateLocation = async (latitude, longitude, address,detailAddress) => {
   return api.post("/update-location", {
     latitude,
     longitude,
+    address,
+    detailAddress,
   });
 };
 
+// 현재 사용자 정보 조회 API
+export const getMyInfo = async () => {
+  const response = await api.get("/me");
+  return response.data;
+};
