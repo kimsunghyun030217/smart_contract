@@ -73,4 +73,12 @@ public class UserService {
         user.setPassword(encoded);
         userRepository.save(user);
     }
+
+    // 주소 업데이트 
+    public void updateLocation(User user, Double latitude, Double longitude) {
+    user.setLatitude(latitude);
+    user.setLongitude(longitude);
+    userRepository.save(user);
+    }
+
 }

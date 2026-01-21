@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { getCoordinates } from "../api/naverApi";
 import { changePassword } from "../api/authApi";
+import { updateLocation } from "../api/authApi";
+
 
 function MyPage() {
   const navigate = useNavigate();
@@ -76,20 +78,32 @@ function MyPage() {
     }
   };
 
-  const handleAddressUpdate = () => {
+  const handleAddressUpdate = async () => {
+
     if (!userProfile.address) {
       alert("주소를 입력해주세요");
       return;
     }
 
-    alert("주소 정보가 저장되었습니다");
-    console.log("주소 저장:", {
-      address: userProfile.address,
-      detailAddress: userProfile.detailAddress,
-      latitude: userProfile.latitude,
-      longitude: userProfile.longitude,
-    });
+    if (!userProfile.latitude || !userProfile.longitude) {
+      alert("주소 검색을 먼저 해주세요 (위도/경도 없음)");
+      return;
+    }
+
+    try {
+      await updateLocation(
+        userProfile.latitude,
+        userProfile.longitude
+      );
+
+      alert("주소 정보가 저장되었습니다!");
+
+    } catch (error) {
+      console.error(error);
+      alert("주소 정보 저장 실패");
+    }
   };
+
 
   const handlePaymentUpdate = () => {
     if (!userProfile.paymentMethod) {

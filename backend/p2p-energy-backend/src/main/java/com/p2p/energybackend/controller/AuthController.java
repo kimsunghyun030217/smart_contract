@@ -113,4 +113,30 @@ public class AuthController {
 
         return ResponseEntity.ok("비밀번호 변경 완료");
     }
+
+    @PostMapping("/update-location")
+    public ResponseEntity<?> updateLocation(
+            @RequestHeader("Authorization") String authHeader,
+            @RequestBody Map<String, Object> request
+    ) {
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            return ResponseEntity.status(401).body("인증 필요");
+        }
+
+        String token = authHeader.substring(7);
+        String username = jwtUtil.extractUsername(token);
+
+        User user = userService.findByUsername(username);
+        if (user == null) {
+            return ResponseEntity.status(404).body("사용자를 찾을 수 없습니다.");
+        }
+
+        Double latitude = Double.valueOf(request.get("latitude").toString());
+        Double longitude = Double.valueOf(request.get("longitude").toString());
+
+        userService.updateLocation(user, latitude, longitude);
+
+        return ResponseEntity.ok("주소 정보 업데이트 완료");
+    }
+
 }

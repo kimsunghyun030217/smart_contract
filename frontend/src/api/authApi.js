@@ -42,3 +42,12 @@ export const checkUsername = async (username) => {
   const response = await api.get(`/check-username?username=${username}`);
   return response.data;
 };
+
+//주소 저장 
+export const updateLocation = async (latitude, longitude) => {
+  return api.post("/update-location", {
+    latitude,
+    longitude,
+  });
+};
+
