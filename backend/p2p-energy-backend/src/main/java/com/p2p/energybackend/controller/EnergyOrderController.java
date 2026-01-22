@@ -22,7 +22,16 @@ public class EnergyOrderController {
             return ResponseEntity.status(401).body("인증 필요");
         }
 
-        Long userId = (Long) auth.getPrincipal();
+        Object principal = auth.getPrincipal();
+
+        Long userId;
+        try {
+            if (principal instanceof Long) userId = (Long) principal;
+            else userId = Long.valueOf(principal.toString());
+        } catch (Exception e) {
+            return ResponseEntity.status(401).body("유효하지 않은 인증 정보");
+        }
+
         order.setUserId(userId);
 
         return ResponseEntity.ok(energyOrderService.createOrder(order));

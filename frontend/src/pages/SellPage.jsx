@@ -45,55 +45,29 @@ export default function SellPage() {
 
   return (
     <Layout>
-      <div style={pageContainer}>
-        {/* 좌측 헤더 영역 */}
-        <div style={leftSection}>
+      <div style={container}>
+        {/* 헤더 섹션 */}
+        <div style={header}>
           <div style={headerContent}>
-            <div style={iconLarge}>⚡</div>
-            <h1 style={mainTitle}>에너지 판매 등록</h1>
-            <p style={mainSubtitle}>
-              남는 전력을 거래소에 등록하고<br />
-              수익을 창출하세요
-            </p>
-            
-            {amount && price && (
-              <div style={estimateCard}>
-                <div style={estimateTitle}>예상 수익</div>
-                <div style={estimateAmount}>
-                  ₩{(Number(amount) * Number(price)).toLocaleString()}
-                </div>
-                <div style={estimateDetail}>
-                  {amount}kWh × ₩{Number(price).toLocaleString()}/kWh
-                </div>
-              </div>
-            )}
-
-            <div style={infoBox}>
-              <div style={infoItem}>
-                <span style={infoIcon}>📊</span>
-                <div>
-                  <div style={infoLabel}>평균 거래가</div>
-                  <div style={infoValue}>₩145/kWh</div>
-                </div>
-              </div>
-              <div style={infoItem}>
-                <span style={infoIcon}>🔥</span>
-                <div>
-                  <div style={infoLabel}>오늘 거래량</div>
-                  <div style={infoValue}>1,247kWh</div>
-                </div>
-              </div>
+            <div style={iconWrapper}>
+              <span style={icon}>💰</span>
+            </div>
+            <div>
+              <h1 style={title}>에너지 판매</h1>
+              <p style={subtitle}>필요한 에너지를 원하는 가격과 시간에 판매하세요</p>
             </div>
           </div>
         </div>
 
-        {/* 우측 폼 영역 */}
-        <div style={rightSection}>
-          <div style={formCard}>
-            <h2 style={formTitle}>판매 정보 입력</h2>
-            
+        {/* 판매 카드 */}
+        <div style={cardWrapper}>
+          <div style={card}>
+            <div style={cardHeader}>
+              <h2 style={cardTitle}>판매 정보 입력</h2>
+            </div>
+
+            {/* 수량 & 가격 그리드 */}
             <div style={formGrid}>
-              {/* 전력량 */}
               <div style={inputGroup}>
                 <label style={label}>
                   <span style={labelIcon}>🔋</span>
@@ -103,15 +77,14 @@ export default function SellPage() {
                   <input
                     type="number"
                     placeholder="50"
-                    style={input}
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
+                    style={input}
                   />
-                  <span style={unit}>kWh</span>
+                  <span style={inputUnit}>kWh</span>
                 </div>
               </div>
 
-              {/* 단가 */}
               <div style={inputGroup}>
                 <label style={label}>
                   <span style={labelIcon}>💰</span>
@@ -121,11 +94,11 @@ export default function SellPage() {
                   <input
                     type="number"
                     placeholder="150"
-                    style={input}
                     value={price}
                     onChange={(e) => setPrice(e.target.value)}
+                    style={input}
                   />
-                  <span style={unit}>₩/kWh</span>
+                  <span style={inputUnit}>₩/kWh</span>
                 </div>
               </div>
             </div>
@@ -162,8 +135,39 @@ export default function SellPage() {
               </div>
             </div>
 
-            {/* 제출 버튼 */}
-            <button style={submitBtn} onClick={submitSellOrder}>
+            {/* 예상 금액 카드 */}
+            {amount && price && (
+              <div style={estimateCard}>
+                <div style={estimateRow}>
+                  <span style={estimateLabel}>판매 수량</span>
+                  <span style={estimateValue}>{parseFloat(amount).toLocaleString()} kWh</span>
+                </div>
+                <div style={estimateRow}>
+                  <span style={estimateLabel}>희망 단가</span>
+                  <span style={estimateValue}>₩{parseFloat(price).toLocaleString()}</span>
+                </div>
+                <div style={estimateDivider} />
+                <div style={estimateRow}>
+                  <span style={estimateLabelTotal}>예상 수익</span>
+                  <span style={estimateValueTotal}>
+                    ₩{(parseFloat(amount) * parseFloat(price)).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            <button
+              style={primaryBtn}
+              onClick={submitSellOrder}
+              onMouseEnter={(e) => {
+                e.target.style.transform = "translateY(-2px)";
+                e.target.style.boxShadow = "0 6px 20px rgba(16, 185, 129, 0.4)";
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.transform = "translateY(0)";
+                e.target.style.boxShadow = "0 4px 16px rgba(16, 185, 129, 0.3)";
+              }}
+            >
               <span style={btnIcon}>✓</span>
               판매 주문 등록하기
             </button>
@@ -178,126 +182,77 @@ export default function SellPage() {
   );
 }
 
-// 스타일
-const pageContainer = {
-  display: "grid",
-  gridTemplateColumns: "45% 55%",
-  minHeight: "100vh",
-  background: "#f8fafc",
+const container = {
+  padding: "48px 32px",
+  maxWidth: 800,
+  margin: "0 auto",
 };
 
-const leftSection = {
-  background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-  padding: "80px 60px",
-  display: "flex",
-  alignItems: "center",
-  color: "white",
+const header = {
+  marginBottom: 48,
 };
 
 const headerContent = {
-  maxWidth: 480,
-};
-
-const iconLarge = {
-  fontSize: 72,
-  marginBottom: 24,
-};
-
-const mainTitle = {
-  fontSize: 48,
-  fontWeight: 800,
-  margin: "0 0 16px 0",
-  lineHeight: 1.2,
-  letterSpacing: "-1px",
-};
-
-const mainSubtitle = {
-  fontSize: 18,
-  lineHeight: 1.6,
-  opacity: 0.95,
-  marginBottom: 40,
-};
-
-const estimateCard = {
-  background: "rgba(255,255,255,0.15)",
-  backdropFilter: "blur(10px)",
-  padding: 28,
-  borderRadius: 20,
-  border: "2px solid rgba(255,255,255,0.2)",
-  marginBottom: 32,
-};
-
-const estimateTitle = {
-  fontSize: 14,
-  fontWeight: 600,
-  opacity: 0.9,
-  marginBottom: 8,
-};
-
-const estimateAmount = {
-  fontSize: 42,
-  fontWeight: 800,
-  marginBottom: 8,
-  letterSpacing: "-1px",
-};
-
-const estimateDetail = {
-  fontSize: 14,
-  opacity: 0.8,
-};
-
-const infoBox = {
-  display: "grid",
-  gridTemplateColumns: "1fr 1fr",
-  gap: 16,
-};
-
-const infoItem = {
-  background: "rgba(255,255,255,0.1)",
-  padding: 20,
-  borderRadius: 16,
   display: "flex",
   alignItems: "center",
-  gap: 12,
+  gap: 20,
 };
 
-const infoIcon = {
-  fontSize: 28,
-};
-
-const infoLabel = {
-  fontSize: 13,
-  opacity: 0.85,
-  marginBottom: 4,
-};
-
-const infoValue = {
-  fontSize: 20,
-  fontWeight: 700,
-};
-
-const rightSection = {
-  padding: "80px 60px",
+const iconWrapper = {
+  width: 64,
+  height: 64,
+  borderRadius: 20,
+  background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
+  boxShadow: "0 8px 24px rgba(16, 185, 129, 0.3)",
 };
 
-const formCard = {
-  width: "100%",
-  maxWidth: 600,
+const icon = {
+  fontSize: 32,
+};
+
+const title = {
+  fontSize: 36,
+  fontWeight: 800,
+  margin: 0,
+  marginBottom: 4,
+  background: "linear-gradient(135deg, #1e293b 0%, #475569 100%)",
+  WebkitBackgroundClip: "text",
+  WebkitTextFillColor: "transparent",
+};
+
+const subtitle = {
+  fontSize: 16,
+  color: "#64748b",
+  margin: 0,
+};
+
+const cardWrapper = {
+  display: "flex",
+  justifyContent: "center",
+};
+
+const card = {
   background: "white",
   padding: 48,
   borderRadius: 24,
-  boxShadow: "0 4px 24px rgba(0,0,0,0.06)",
+  border: "2px solid #e2e8f0",
+  boxShadow: "0 4px 24px rgba(0, 0, 0, 0.06)",
+  width: "100%",
+  maxWidth: 700,
 };
 
-const formTitle = {
+const cardHeader = {
+  marginBottom: 32,
+};
+
+const cardTitle = {
   fontSize: 28,
   fontWeight: 700,
+  margin: 0,
   color: "#1f2937",
-  marginBottom: 32,
-  marginTop: 0,
 };
 
 const formGrid = {
@@ -328,25 +283,26 @@ const labelIcon = {
 
 const inputWrapper = {
   position: "relative",
-  display: "flex",
-  alignItems: "center",
 };
 
 const input = {
   width: "100%",
   padding: "14px 16px",
+  paddingRight: "60px",
   fontSize: 16,
+  fontWeight: 500,
   border: "2px solid #e5e7eb",
   borderRadius: 12,
   outline: "none",
   transition: "all 0.2s ease",
-  fontWeight: 500,
   boxSizing: "border-box",
 };
 
-const unit = {
+const inputUnit = {
   position: "absolute",
   right: 16,
+  top: "50%",
+  transform: "translateY(-50%)",
   fontSize: 13,
   fontWeight: 600,
   color: "#9ca3af",
@@ -384,6 +340,8 @@ const timeInput = {
   outline: "none",
   transition: "all 0.2s ease",
   fontWeight: 500,
+  width: "100%",
+  boxSizing: "border-box",
 };
 
 const arrowIcon = {
@@ -393,22 +351,67 @@ const arrowIcon = {
   marginTop: 20,
 };
 
-const submitBtn = {
+const estimateCard = {
+  background: "#ecfdf5",
+  padding: 24,
+  borderRadius: 16,
+  marginBottom: 24,
+  border: "1px solid #a7f3d0",
+};
+
+const estimateRow = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  marginBottom: 10,
+};
+
+const estimateLabel = {
+  fontSize: 14,
+  color: "#475569",
+  fontWeight: 600,
+};
+
+const estimateValue = {
+  fontSize: 15,
+  fontWeight: 700,
+  color: "#0f172a",
+};
+
+const estimateDivider = {
+  height: 1,
+  background: "#a7f3d0",
+  margin: "16px 0",
+};
+
+const estimateLabelTotal = {
+  fontSize: 15,
+  color: "#065f46",
+  fontWeight: 700,
+};
+
+const estimateValueTotal = {
+  fontSize: 20,
+  fontWeight: 900,
+  color: "#065f46",
+};
+
+const primaryBtn = {
   width: "100%",
   padding: "18px 24px",
-  fontSize: 17,
-  fontWeight: 700,
-  color: "white",
   background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+  color: "white",
   border: "none",
   borderRadius: 14,
+  fontWeight: 700,
+  fontSize: 17,
   cursor: "pointer",
-  transition: "all 0.3s ease",
-  boxShadow: "0 4px 14px rgba(16, 185, 129, 0.3)",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
   gap: 8,
+  boxShadow: "0 4px 16px rgba(16, 185, 129, 0.3)",
+  transition: "all 0.3s ease",
   marginBottom: 20,
 };
 
