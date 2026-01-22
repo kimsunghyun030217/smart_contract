@@ -6,6 +6,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -33,8 +34,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     ) throws ServletException, IOException {
 
         String path = request.getRequestURI();
-        // 로그인/회원가입은 토큰 없어도 되니까 필터에서 그냥 통과
-        if (path.startsWith("/api/auth/")) {
+
+        // ✅ OPTIONS는 무조건 통과 (프리플라이트)
+        if (HttpMethod.OPTIONS.matches(request.getMethod())) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
+        // ✅ "공개 API"만 토큰 없이 통과 (여기만 스킵!)
+        if (path.equals("/api/auth/login")
+                || path.equals("/api/auth/signup")
+                || path.equals("/api/auth/check-username")) {
             filterChain.doFilter(request, response);
             return;
         }
@@ -46,16 +56,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
-        String token = authHeader.substring(7);
+        String token = authHeader.substring(7).trim();
 
         try {
-            Claims claims = jwtUtil.validateToken(token); // 아래 JwtUtil에 추가할 메서드
+            Claims claims = jwtUtil.validateToken(token);
 
             Long userId = claims.get("userId", Long.class);
 
             if (userId != null && SecurityContextHolder.getContext().getAuthentication() == null) {
 
-                // role을 토큰에 안 넣고 있으니 일단 USER로 고정
                 UsernamePasswordAuthenticationToken authentication =
                         new UsernamePasswordAuthenticationToken(
                                 userId,
