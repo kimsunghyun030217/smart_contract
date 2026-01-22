@@ -54,7 +54,7 @@ public class AuthController {
             String password = request.get("password");
 
             User user = userService.login(username, password);
-            String token = jwtUtil.generateToken(user.getUsername());
+            String token = jwtUtil.generateToken(user.getId(), user.getUsername());
 
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
