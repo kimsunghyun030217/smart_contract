@@ -5,10 +5,23 @@ export default function Layout({ children }) {
   const [open, setOpen] = useState(true);
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh" }}>
+    <div
+      style={{
+        display: "flex",
+        height: "100vh",     // ✅ minHeight -> height
+        overflow: "hidden",  // ✅ body 스크롤 막기(끊김 해결 핵심)
+      }}
+    >
       {open && <Sidebar />}
 
-      <div style={{ flex: 1, background: "#f8fafc", padding: 24 }}>
+      <div
+        style={{
+          flex: 1,
+          background: "#f8fafc",
+          padding: 24,
+          overflowY: "auto", // ✅ 오른쪽만 스크롤
+        }}
+      >
         <button
           onClick={() => setOpen(!open)}
           style={{

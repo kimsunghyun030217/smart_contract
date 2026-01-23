@@ -15,10 +15,10 @@ public class EnergyOrderService {
         this.energyOrderRepository = energyOrderRepository;
     }
 
-    // ✅ 주문 저장 (BUY면 가중치 기본값 세팅)
+    // ✅ 주문 저장 (BUY면 가중치 기본값 세팅 + 정규화)
     public EnergyOrder createOrder(EnergyOrder order) {
 
-        // status 기본값 통일(선택): null이면 ACTIVE로
+        // status 기본값 통일
         if (order.getStatus() == null || order.getStatus().isBlank()) {
             order.setStatus("ACTIVE");
         }
@@ -29,7 +29,7 @@ public class EnergyOrderService {
             if (order.getWeightDistance() == null) order.setWeightDistance(0.3);
             if (order.getWeightTrust() == null) order.setWeightTrust(0.1);
 
-            // (선택) 혹시 합이 1이 아니면 정규화
+            // 합이 1이 아니면 정규화
             double sum = order.getWeightPrice() + order.getWeightDistance() + order.getWeightTrust();
             if (sum > 0 && Math.abs(sum - 1.0) > 0.0001) {
                 order.setWeightPrice(order.getWeightPrice() / sum);
@@ -41,9 +41,14 @@ public class EnergyOrderService {
         return energyOrderRepository.save(order);
     }
 
-    // 내 주문 조회 (최신순)
-    public List<EnergyOrder> getMyOrders(Long userId) {
-        return energyOrderRepository.findByUserIdOrderByCreatedAtDesc(userId);
+    // ✅ 진행중 주문(완료 제외) 조회 (최신순)
+    public List<EnergyOrder> getMyOrdersInProgress(Long userId) {
+        return energyOrderRepository.findByUserIdAndStatusNotOrderByCreatedAtDesc(userId, "COMPLETED");
+    }
+
+    // ✅ 완료 주문(COMPLETED만) 조회 (최신순)
+    public List<EnergyOrder> getMyCompletedOrders(Long userId) {
+        return energyOrderRepository.findByUserIdAndStatusOrderByCreatedAtDesc(userId, "COMPLETED");
     }
 
     // ✅ 주문 취소(삭제): ACTIVE(대기)인 내 주문만 가능
@@ -56,13 +61,7 @@ public class EnergyOrderService {
             throw new SecurityException("권한 없음");
         }
 
-        // ACTIVE만 취소 가능 (기존 데이터 "active"도 허용)
-        String s = String.valueOf(order.getStatus()).toUpperCase();
-        if (!"ACTIVE".equals(s) && !"ACTIVE".equalsIgnoreCase(order.getStatus()) && !"ACTIVE".equals(s)) {
-            // 위 줄이 복잡해 보여서 아래처럼 단순하게 쓰는 걸 추천(아래로 교체 가능)
-        }
-
-        // ✅ 제일 깔끔한 판정(추천)
+        // ACTIVE만 취소 가능
         if (!"ACTIVE".equalsIgnoreCase(String.valueOf(order.getStatus()))) {
             throw new IllegalStateException("대기(ACTIVE) 상태만 취소 가능");
         }

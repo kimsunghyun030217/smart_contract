@@ -8,5 +8,10 @@ import java.util.List;
 
 @Repository
 public interface EnergyOrderRepository extends JpaRepository<EnergyOrder, Long> {
-    List<EnergyOrder> findByUserIdOrderByCreatedAtDesc(Long userId);
+
+    // ✅ 진행중 주문: COMPLETED 제외
+    List<EnergyOrder> findByUserIdAndStatusNotOrderByCreatedAtDesc(Long userId, String status);
+
+    // ✅ 완료 주문: COMPLETED만
+    List<EnergyOrder> findByUserIdAndStatusOrderByCreatedAtDesc(Long userId, String status);
 }

@@ -5,7 +5,9 @@ import Dashboard from "./pages/Dashboard";
 import MyPage from "./pages/MyPage";
 import SellPage from "./pages/SellPage";
 import BuyPage from "./pages/BuyPage";
-import OrdersPage from "./pages/OrdersPage"; // ✅ 추가
+import OrdersPage from "./pages/OrdersPage"; 
+import CompletedPage from "./pages/CompletedPage";
+
 
 function App() {
   return (
@@ -19,9 +21,11 @@ function App() {
         <Route path="/sell" element={<SellPage />} />
         <Route path="/buy" element={<BuyPage />} />
 
-        <Route path="/orders" element={<OrdersPage />} /> {/* ✅ 추가 */}
+        <Route path="/orders" element={<OrdersPage />} /> 
+        <Route path="/completed" element={<CompletedPage />} />
 
         <Route path="/mypage" element={<MyPage />} />
+        
       </Routes>
     </BrowserRouter>
   );
