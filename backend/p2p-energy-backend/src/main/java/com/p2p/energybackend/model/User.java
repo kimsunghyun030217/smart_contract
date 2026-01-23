@@ -35,6 +35,9 @@ public class User {
     @Column(name = "detail_address")
     private String detailAddress;
 
+    // ✅ 추가: 신뢰도 점수
+    @Column(name = "trust_score", nullable = false)
+    private Integer trustScore = 80;
 
     @PrePersist
     protected void onCreate() {
@@ -50,38 +53,33 @@ public class User {
 
     // Getters / Setters
     public Long getId() { return id; }
-
     public void setId(Long id) { this.id = id; }
 
     public String getUsername() { return username; }
-
     public void setUsername(String username) { this.username = username; }
 
     public String getPassword() { return password; }
-
     public void setPassword(String password) { this.password = password; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
-
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 
     public LocalDateTime getLastLoginAt() { return lastLoginAt; }
-
     public void setLastLoginAt(LocalDateTime lastLoginAt) { this.lastLoginAt = lastLoginAt; }
 
     public Double getLatitude() { return latitude; }
-
     public void setLatitude(Double latitude) { this.latitude = latitude; }
 
     public Double getLongitude() { return longitude; }
-
     public void setLongitude(Double longitude) { this.longitude = longitude; }
 
     public String getAddress() { return address; }
-
     public void setAddress(String address) { this.address = address; }
 
     public String getDetailAddress() { return detailAddress; }
-
     public void setDetailAddress(String detailAddress) { this.detailAddress = detailAddress; }
+
+    // ✅ 추가 getter/setter
+    public Integer getTrustScore() { return trustScore; }
+    public void setTrustScore(Integer trustScore) { this.trustScore = trustScore; }
 }

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import Layout from "../components/Layout";
 
 export default function BuyPage() {
@@ -7,22 +7,66 @@ export default function BuyPage() {
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
 
+  // ✅ 추가: 가중치(0~1). 합은 자동으로 1 되게 정규화
+  const [weights, setWeights] = useState({
+    price: 0.6,
+    distance: 0.3,
+    trust: 0.1,
+  });
+
+  const clamp01 = (x) => Math.max(0, Math.min(1, x));
+
+  const normalize = (p, d, t) => {
+    const sum = p + d + t;
+    if (sum <= 0) return { price: 0.6, distance: 0.3, trust: 0.1 };
+    return { price: p / sum, distance: d / sum, trust: t / sum };
+  };
+
+  // ✅ 슬라이더 변경 시 합계 자동 1로 맞춤
+  const setWeight = (key, value) => {
+    const v = clamp01(value);
+    setWeights((prev) => normalize(
+      key === "price" ? v : prev.price,
+      key === "distance" ? v : prev.distance,
+      key === "trust" ? v : prev.trust
+    ));
+  };
+
+  const presets = {
+    cheap: { price: 0.7, distance: 0.2, trust: 0.1 },
+    near: { price: 0.3, distance: 0.6, trust: 0.1 },
+    safe: { price: 0.3, distance: 0.2, trust: 0.5 },
+    balanced: { price: 0.6, distance: 0.3, trust: 0.1 },
+  };
+
+  const weightSummaryText = useMemo(() => {
+    const p = Math.round(weights.price * 100);
+    const d = Math.round(weights.distance * 100);
+    const t = Math.round(weights.trust * 100);
+    return `가격 ${p}% · 거리 ${d}% · 신뢰 ${t}%`;
+  }, [weights]);
+
   async function submitBuyOrder() {
     if (!amount || !price || !startTime || !endTime) {
       alert("모든 값을 입력해주세요.");
       return;
     }
 
+    // ✅ 주문 payload에 가중치 포함
     const order = {
       orderType: "buy",
       pricePerKwh: Number(price),
       amountKwh: Number(amount),
       startTime: startTime + ":00",
       endTime: endTime + ":00",
+      status: "ACTIVE",
+      weightPrice: Number(weights.price.toFixed(4)),
+      weightDistance: Number(weights.distance.toFixed(4)),
+      weightTrust: Number(weights.trust.toFixed(4)),
     };
 
     try {
-      const token = localStorage.getItem("token"); // ✅ SellPage랑 동일
+      const token = localStorage.getItem("token");
 
       const res = await fetch("http://localhost:8080/orders", {
         method: "POST",
@@ -39,6 +83,7 @@ export default function BuyPage() {
         setPrice("");
         setStartTime("");
         setEndTime("");
+        setWeights(presets.balanced); // ✅ 초기값으로 리셋
       } else {
         const msg = await res.text().catch(() => "");
         alert("주문 등록 실패! " + msg);
@@ -141,6 +186,87 @@ export default function BuyPage() {
               </div>
             </div>
 
+            {/* ✅ 추가: 매칭 가중치 카드 */}
+            <div style={weightCard}>
+              <div style={weightTop}>
+                <div style={weightTitle}>매칭 기준 설정</div>
+                <div style={weightSummary}>{weightSummaryText}</div>
+              </div>
+
+              <div style={presetRow}>
+                <button style={presetBtn} onClick={() => setWeights(presets.cheap)}>
+                  최저가 우선
+                </button>
+                <button style={presetBtn} onClick={() => setWeights(presets.near)}>
+                  가까운 거래
+                </button>
+                <button style={presetBtn} onClick={() => setWeights(presets.safe)}>
+                  안전 우선
+                </button>
+                <button style={presetBtn} onClick={() => setWeights(presets.balanced)}>
+                  기본값
+                </button>
+              </div>
+
+              <div style={weightGrid}>
+                {/* 가격 */}
+                <div style={weightItem}>
+                  <div style={weightLabelRow}>
+                    <span style={weightLabel}>가격 중요도</span>
+                    <span style={weightPct}>{Math.round(weights.price * 100)}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={weights.price}
+                    onChange={(e) => setWeight("price", Number(e.target.value))}
+                    style={range}
+                  />
+                  <div style={weightHint}>가격이 유리한 상대를 더 우선 매칭</div>
+                </div>
+
+                {/* 거리 */}
+                <div style={weightItem}>
+                  <div style={weightLabelRow}>
+                    <span style={weightLabel}>거리 중요도</span>
+                    <span style={weightPct}>{Math.round(weights.distance * 100)}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={weights.distance}
+                    onChange={(e) => setWeight("distance", Number(e.target.value))}
+                    style={range}
+                  />
+                  <div style={weightHint}>가까운 상대를 더 우선 매칭</div>
+                </div>
+
+                {/* 신뢰 */}
+                <div style={weightItem}>
+                  <div style={weightLabelRow}>
+                    <span style={weightLabel}>신뢰 중요도</span>
+                    <span style={weightPct}>{Math.round(weights.trust * 100)}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={weights.trust}
+                    onChange={(e) => setWeight("trust", Number(e.target.value))}
+                    style={range}
+                  />
+                  <div style={weightHint}>신뢰도 높은 상대를 더 우선 매칭</div>
+                </div>
+              </div>
+
+              <div style={weightFootnote}>합계는 자동으로 100%로 맞춰져요.</div>
+            </div>
+
             {/* 예상 금액 카드 */}
             {amount && price && (
               <div style={estimateCard}>
@@ -168,7 +294,7 @@ export default function BuyPage() {
 
             <button
               style={primaryBtn}
-              onClick={submitBuyOrder}  // ✅ 여기만 연결하면 됨
+              onClick={submitBuyOrder}
               onMouseEnter={(e) => {
                 e.target.style.transform = "translateY(-2px)";
                 e.target.style.boxShadow = "0 6px 20px rgba(59, 130, 246, 0.4)";
@@ -182,9 +308,7 @@ export default function BuyPage() {
               구매 주문 등록하기
             </button>
 
-            <div style={notice}>
-              💡 등록된 주문은 매칭 시스템을 통해 자동으로 거래됩니다
-            </div>
+            <div style={notice}>💡 등록된 주문은 매칭 시스템을 통해 자동으로 거래됩니다</div>
           </div>
         </div>
       </div>
@@ -289,7 +413,7 @@ const inputUnit = {
   pointerEvents: "none",
 };
 
-const timeSection = { marginBottom: 32 };
+const timeSection = { marginBottom: 20 };
 
 const timeRow = {
   display: "grid",
@@ -321,6 +445,68 @@ const arrowIcon = {
   marginTop: 20,
 };
 
+// ✅ 가중치 카드 스타일
+const weightCard = {
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+  padding: 18,
+  borderRadius: 16,
+  marginBottom: 24,
+};
+
+const weightTop = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "baseline",
+  gap: 12,
+  marginBottom: 12,
+};
+
+const weightTitle = { fontWeight: 900, color: "#0f172a" };
+const weightSummary = { fontSize: 12, fontWeight: 800, color: "#64748b" };
+
+const presetRow = {
+  display: "flex",
+  gap: 8,
+  flexWrap: "wrap",
+  marginBottom: 14,
+};
+
+const presetBtn = {
+  padding: "8px 10px",
+  borderRadius: 12,
+  border: "1px solid #e2e8f0",
+  background: "white",
+  cursor: "pointer",
+  fontWeight: 800,
+  fontSize: 12,
+  color: "#334155",
+};
+
+const weightGrid = { display: "grid", gap: 14 };
+
+const weightItem = {
+  background: "white",
+  border: "1px solid #e2e8f0",
+  borderRadius: 14,
+  padding: 14,
+};
+
+const weightLabelRow = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  marginBottom: 8,
+};
+
+const weightLabel = { fontSize: 13, fontWeight: 900, color: "#0f172a" };
+const weightPct = { fontSize: 12, fontWeight: 900, color: "#2563eb" };
+
+const range = { width: "100%" };
+const weightHint = { fontSize: 12, color: "#64748b", marginTop: 6 };
+const weightFootnote = { fontSize: 12, color: "#94a3b8", marginTop: 10 };
+
+// 예상 금액 카드
 const estimateCard = {
   background: "#f0f9ff",
   padding: 24,

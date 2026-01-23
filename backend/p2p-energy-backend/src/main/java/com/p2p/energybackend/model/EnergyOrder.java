@@ -35,6 +35,15 @@ public class EnergyOrder {
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 
+    // ✅ 추가: 구매자 가중치 (BUY에서 사용, SELL은 null 가능)
+    @Column(name = "weight_price")
+    private Double weightPrice;
+
+    @Column(name = "weight_distance")
+    private Double weightDistance;
+
+    @Column(name = "weight_trust")
+    private Double weightTrust;
 
     // Getter/Setter
     public Long getId() { return id; }
@@ -61,4 +70,14 @@ public class EnergyOrder {
     public void setStatus(String status) { this.status = status; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
+
+    // ✅ 추가 getter/setter
+    public Double getWeightPrice() { return weightPrice; }
+    public void setWeightPrice(Double weightPrice) { this.weightPrice = weightPrice; }
+
+    public Double getWeightDistance() { return weightDistance; }
+    public void setWeightDistance(Double weightDistance) { this.weightDistance = weightDistance; }
+
+    public Double getWeightTrust() { return weightTrust; }
+    public void setWeightTrust(Double weightTrust) { this.weightTrust = weightTrust; }
 }
