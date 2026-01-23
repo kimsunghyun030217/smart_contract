@@ -86,6 +86,17 @@ export default function Sidebar() {
         기타
       </div>
 
+      {/* 주문내역 */}
+      <button
+        style={{
+          ...navItem,
+          ...(isActive("/orders") ? navItemActive : {})
+        }}
+        onClick={() => navigate("/orders")}
+      >
+        주문내역
+      </button>
+
       {/* 마이페이지 */}
       <button
         style={{
@@ -96,7 +107,6 @@ export default function Sidebar() {
       >
         마이페이지
       </button>
-
     </div>
   );
 }

@@ -5,6 +5,7 @@ import Dashboard from "./pages/Dashboard";
 import MyPage from "./pages/MyPage";
 import SellPage from "./pages/SellPage";
 import BuyPage from "./pages/BuyPage";
+import OrdersPage from "./pages/OrdersPage"; // ✅ 추가
 
 function App() {
   return (
@@ -17,6 +18,8 @@ function App() {
 
         <Route path="/sell" element={<SellPage />} />
         <Route path="/buy" element={<BuyPage />} />
+
+        <Route path="/orders" element={<OrdersPage />} /> {/* ✅ 추가 */}
 
         <Route path="/mypage" element={<MyPage />} />
       </Routes>
