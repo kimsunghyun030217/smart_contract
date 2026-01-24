@@ -1,12 +1,13 @@
 package com.p2p.energybackend.repository;
 
 import com.p2p.energybackend.model.EnergyOrder;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.stereotype.Repository;
+import org.springframework.data.jpa.repository.*;
+import org.springframework.data.repository.query.Param;
+import org.springframework.data.domain.Pageable;
 
+import jakarta.persistence.LockModeType;
 import java.util.List;
 
-@Repository
 public interface EnergyOrderRepository extends JpaRepository<EnergyOrder, Long> {
 
     // ✅ 진행중 주문: COMPLETED 제외
@@ -14,4 +15,42 @@ public interface EnergyOrderRepository extends JpaRepository<EnergyOrder, Long> 
 
     // ✅ 완료 주문: COMPLETED만
     List<EnergyOrder> findByUserIdAndStatusOrderByCreatedAtDesc(Long userId, String status);
+
+    // ✅ BUY 들어왔을 때: 매칭 가능한 SELL 후보들 (정렬됨) + 락 + 자가매칭 방지
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        SELECT o FROM EnergyOrder o
+        WHERE o.orderType = 'sell'
+          AND o.status = 'ACTIVE'
+          AND o.amountKwh = :amountKwh
+          AND o.pricePerKwh <= :buyPrice
+          AND o.endTime > CURRENT_TIMESTAMP
+          AND o.userId <> :userId
+        ORDER BY o.pricePerKwh ASC, o.createdAt ASC
+    """)
+    List<EnergyOrder> findSellMatchesForBuyLocked(
+            @Param("buyPrice") int buyPrice,
+            @Param("amountKwh") double amountKwh,
+            @Param("userId") Long userId,
+            Pageable pageable
+    );
+
+    // ✅ SELL 들어왔을 때: 매칭 가능한 BUY 후보들 (정렬됨) + 락 + 자가매칭 방지
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        SELECT o FROM EnergyOrder o
+        WHERE o.orderType = 'buy'
+          AND o.status = 'ACTIVE'
+          AND o.amountKwh = :amountKwh
+          AND o.pricePerKwh >= :sellPrice
+          AND o.endTime > CURRENT_TIMESTAMP
+          AND o.userId <> :userId
+        ORDER BY o.pricePerKwh DESC, o.createdAt ASC
+    """)
+    List<EnergyOrder> findBuyMatchesForSellLocked(
+            @Param("sellPrice") int sellPrice,
+            @Param("amountKwh") double amountKwh,
+            @Param("userId") Long userId,
+            Pageable pageable
+    );
 }

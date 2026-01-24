@@ -30,7 +30,7 @@ public class EnergyOrder {
     private LocalDateTime endTime;
 
     @Column(nullable = false)
-    private String status = "active";
+    private String status = "ACTIVE";
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
