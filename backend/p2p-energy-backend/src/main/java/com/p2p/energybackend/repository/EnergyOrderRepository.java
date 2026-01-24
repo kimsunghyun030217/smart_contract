@@ -7,6 +7,7 @@ import org.springframework.data.domain.Pageable;
 
 import jakarta.persistence.LockModeType;
 import java.util.List;
+import java.math.BigDecimal;
 
 public interface EnergyOrderRepository extends JpaRepository<EnergyOrder, Long> {
 
@@ -30,7 +31,7 @@ public interface EnergyOrderRepository extends JpaRepository<EnergyOrder, Long> 
     """)
     List<EnergyOrder> findSellMatchesForBuyLocked(
             @Param("buyPrice") int buyPrice,
-            @Param("amountKwh") double amountKwh,
+            @Param("amountKwh") BigDecimal amountKwh,
             @Param("userId") Long userId,
             Pageable pageable
     );
@@ -49,7 +50,7 @@ public interface EnergyOrderRepository extends JpaRepository<EnergyOrder, Long> 
     """)
     List<EnergyOrder> findBuyMatchesForSellLocked(
             @Param("sellPrice") int sellPrice,
-            @Param("amountKwh") double amountKwh,
+            @Param("amountKwh") BigDecimal amountKwh,
             @Param("userId") Long userId,
             Pageable pageable
     );

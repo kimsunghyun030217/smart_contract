@@ -44,6 +44,12 @@ public class EnergyOrderService {
         }
         order.setStatus(order.getStatus().toUpperCase());
 
+        // ✅ (4) kWh 통일: amountKwh scale(3) 강제 (DECIMAL(18,3)와 맞춤)
+        if (order.getAmountKwh() == null) {
+            throw new IllegalArgumentException("amountKwh 필요");
+        }
+        order.setAmountKwh(order.getAmountKwh().setScale(3, RoundingMode.HALF_UP));
+
         // 2) BUY일 때만 가중치 사용 (없으면 기본값) + 정규화
         if ("buy".equalsIgnoreCase(order.getOrderType())) {
             if (order.getWeightPrice() == null) order.setWeightPrice(0.6);
@@ -106,9 +112,6 @@ public class EnergyOrderService {
 
     /**
      * ✅ 매칭 핵심: 1:1 전량체결, 가격 교차 허용(buy>=sell)
-     * - BUY 들어오면: SELL을 (가격 낮은 순, 오래된 순) 1개 락 걸고 가져옴
-     * - SELL 들어오면: BUY를 (가격 높은 순, 오래된 순) 1개 락 걸고 가져옴
-     * - 자가매칭은 레포에서 userId <> :userId 로 방지
      */
     private void tryMatchOne(EnergyOrder newOrder) {
 
@@ -116,7 +119,7 @@ public class EnergyOrderService {
 
         String type = newOrder.getOrderType();      // buy/sell (lowercase로 통일됨)
         int price = newOrder.getPricePerKwh();
-        double amount = newOrder.getAmountKwh();
+        BigDecimal amount = newOrder.getAmountKwh(); // ✅ BigDecimal
         Long userId = newOrder.getUserId();
 
         // ✅ BUY 주문이면 → SELL 1개 찾기
@@ -147,7 +150,11 @@ public class EnergyOrderService {
             trade.setBuyOrderId(newOrder.getId());
             trade.setSellOrderId(sell.getId());
             trade.setPricePerKwh(executedPrice);
+
+            // ⚠️ EnergyTrade.amountKwh가 아직 Double이면 여기서 컴파일 에러!
+            //    그 경우 EnergyTrade도 BigDecimal로 바꾸는 게 정석임.
             trade.setAmountKwh(amount);
+
             trade.setStatus("MATCHED");
             energyTradeRepository.save(trade);
 
@@ -183,7 +190,10 @@ public class EnergyOrderService {
             trade.setBuyOrderId(buy.getId());
             trade.setSellOrderId(newOrder.getId());
             trade.setPricePerKwh(executedPrice);
+
+            // ⚠️ EnergyTrade.amountKwh가 아직 Double이면 여기서 컴파일 에러!
             trade.setAmountKwh(amount);
+
             trade.setStatus("MATCHED");
             energyTradeRepository.save(trade);
 
@@ -199,7 +209,6 @@ public class EnergyOrderService {
 
         BigDecimal need = calcNeedMoneyByPrice(order.getPricePerKwh(), order.getAmountKwh());
 
-        // 지갑 락 조회(없으면 생성)
         UserWallet wallet = userWalletRepository.findByUserIdLocked(buyerId)
                 .orElseGet(() -> userWalletRepository.save(new UserWallet(buyerId)));
 
@@ -231,9 +240,7 @@ public class EnergyOrderService {
     }
 
     /**
-     * ✅ (3) 매칭 후 차액 해제:
-     * - 잠금은 buyPrice 기준으로 잡혀있음
-     * - 체결가가 더 싸면(extra) 만큼 locked_krw에서 빼서 사용가능 잔고로 돌려줌
+     * ✅ (3) 매칭 후 차액 해제
      */
     private void unlockBuyerExtraLock(EnergyOrder buyOrder, int executedPricePerKwh) {
         Long buyerId = buyOrder.getUserId();
@@ -261,10 +268,10 @@ public class EnergyOrderService {
         userWalletRepository.save(wallet);
     }
 
-    // 금액 계산 (PoC: 소수점 2자리 반올림)
-    private BigDecimal calcNeedMoneyByPrice(int pricePerKwh, double amountKwh) {
+    // ✅ 금액 계산: pricePerKwh(int) * amountKwh(BigDecimal)
+    // PoC: 원 단위면 setScale(0)도 가능하지만, 현재는 2자리 유지
+    private BigDecimal calcNeedMoneyByPrice(int pricePerKwh, BigDecimal amountKwh) {
         BigDecimal p = BigDecimal.valueOf(pricePerKwh);
-        BigDecimal kwh = BigDecimal.valueOf(amountKwh);
-        return p.multiply(kwh).setScale(2, RoundingMode.HALF_UP);
+        return p.multiply(amountKwh).setScale(2, RoundingMode.HALF_UP);
     }
 }

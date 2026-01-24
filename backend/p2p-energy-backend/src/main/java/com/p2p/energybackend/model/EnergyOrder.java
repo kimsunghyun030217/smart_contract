@@ -2,6 +2,7 @@ package com.p2p.energybackend.model;
 
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 
 @Entity
 @Table(name = "energy_orders")
@@ -20,8 +21,9 @@ public class EnergyOrder {
     @Column(name = "price_per_kwh", nullable = false)
     private Integer pricePerKwh;
 
-    @Column(name = "amount_kwh", nullable = false)
-    private Double amountKwh;
+    // ✅ Double -> BigDecimal (kWh 통일, 오차 방지)
+    @Column(name = "amount_kwh", nullable = false, precision = 18, scale = 3)
+    private BigDecimal amountKwh;
 
     @Column(name = "start_time", nullable = false)
     private LocalDateTime startTime;
@@ -35,7 +37,7 @@ public class EnergyOrder {
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 
-    // ✅ 추가: 구매자 가중치 (BUY에서 사용, SELL은 null 가능)
+    // ✅ 구매자 가중치 (BUY에서 사용, SELL은 null 가능)
     @Column(name = "weight_price")
     private Double weightPrice;
 
@@ -57,8 +59,8 @@ public class EnergyOrder {
     public Integer getPricePerKwh() { return pricePerKwh; }
     public void setPricePerKwh(Integer pricePerKwh) { this.pricePerKwh = pricePerKwh; }
 
-    public Double getAmountKwh() { return amountKwh; }
-    public void setAmountKwh(Double amountKwh) { this.amountKwh = amountKwh; }
+    public BigDecimal getAmountKwh() { return amountKwh; }
+    public void setAmountKwh(BigDecimal amountKwh) { this.amountKwh = amountKwh; }
 
     public LocalDateTime getStartTime() { return startTime; }
     public void setStartTime(LocalDateTime startTime) { this.startTime = startTime; }
@@ -71,7 +73,6 @@ public class EnergyOrder {
 
     public LocalDateTime getCreatedAt() { return createdAt; }
 
-    // ✅ 추가 getter/setter
     public Double getWeightPrice() { return weightPrice; }
     public void setWeightPrice(Double weightPrice) { this.weightPrice = weightPrice; }
 

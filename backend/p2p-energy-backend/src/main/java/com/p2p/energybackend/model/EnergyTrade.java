@@ -2,6 +2,7 @@ package com.p2p.energybackend.model;
 
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 
 @Entity
 @Table(name = "energy_trades")
@@ -20,14 +21,15 @@ public class EnergyTrade {
     @Column(name = "price_per_kwh", nullable = false)
     private Integer pricePerKwh;
 
-    @Column(name = "amount_kwh", nullable = false)
-    private Double amountKwh;
+    // ✅ Double -> BigDecimal (kWh 통일, 오차 방지)
+    @Column(name = "amount_kwh", nullable = false, precision = 18, scale = 3)
+    private BigDecimal amountKwh;
 
     @Column(name = "status", nullable = false)
     private String status = "MATCHED";
 
     @Column(name = "created_at")
-    private LocalDateTime createdAt;
+    private LocalDateTime createdAt = LocalDateTime.now();
 
     @Column(name = "completed_at")
     private LocalDateTime completedAt;
@@ -45,8 +47,8 @@ public class EnergyTrade {
     public Integer getPricePerKwh() { return pricePerKwh; }
     public void setPricePerKwh(Integer pricePerKwh) { this.pricePerKwh = pricePerKwh; }
 
-    public Double getAmountKwh() { return amountKwh; }
-    public void setAmountKwh(Double amountKwh) { this.amountKwh = amountKwh; }
+    public BigDecimal getAmountKwh() { return amountKwh; }
+    public void setAmountKwh(BigDecimal amountKwh) { this.amountKwh = amountKwh; }
 
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
