@@ -7,12 +7,15 @@ import com.p2p.energybackend.repository.EnergyOrderRepository;
 import com.p2p.energybackend.repository.EnergyTradeRepository;
 import com.p2p.energybackend.repository.UserWalletRepository;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.scheduling.annotation.Scheduled; // ✅ [SCHEDULER]
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDateTime; // ✅ [SCHEDULER]
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean; // ✅ [SCHEDULER]
 
 @Service
 public class EnergyOrderService {
@@ -21,12 +24,51 @@ public class EnergyOrderService {
     private final EnergyTradeRepository energyTradeRepository;
     private final UserWalletRepository userWalletRepository;
 
+    // ✅ [SCHEDULER] 스케줄러 중복 실행 방지(5초인데 처리 오래 걸리면 겹칠 수 있음)
+    private final AtomicBoolean matchingRunning = new AtomicBoolean(false);
+
     public EnergyOrderService(EnergyOrderRepository energyOrderRepository,
                               EnergyTradeRepository energyTradeRepository,
                               UserWalletRepository userWalletRepository) {
         this.energyOrderRepository = energyOrderRepository;
         this.energyTradeRepository = energyTradeRepository;
         this.userWalletRepository = userWalletRepository;
+    }
+
+    // ✅ [SCHEDULER] 5초마다 ACTIVE 전체 훑고 매칭 시도
+    @Scheduled(fixedDelay = 5000)
+    public void runMatchingEngine() {
+        // 이미 실행 중이면 스킵 (중복 실행 방지)
+        if (!matchingRunning.compareAndSet(false, true)) return;
+
+        try {
+            runMatchingEngineTx();
+        } finally {
+            matchingRunning.set(false);
+        }
+    }
+
+    // ✅ [SCHEDULER] 실제 DB 작업은 트랜잭션으로 묶어서 처리
+    @Transactional
+    protected void runMatchingEngineTx() {
+        List<Long> activeIds = energyOrderRepository.findAllActiveOrderIdsForMatching();
+
+        for (Long id : activeIds) {
+            matchOneById(id);
+        }
+    }
+
+    // ✅ [SCHEDULER] id로 다시 읽어서 ACTIVE면 매칭 1번 시도
+    private void matchOneById(Long orderId) {
+        EnergyOrder order = energyOrderRepository.findById(orderId).orElse(null);
+        if (order == null) return;
+
+        if (!"ACTIVE".equalsIgnoreCase(order.getStatus())) return;
+
+        // endTime 만료면 스킵 (Repository에서 걸렀지만 안전장치)
+        if (order.getEndTime() == null || !order.getEndTime().isAfter(LocalDateTime.now())) return;
+
+        tryMatchOne(order);
     }
 
     // ✅ 주문 저장 + (BUY면 reserve 잠금) + 저장 직후 1:1 매칭 시도
@@ -151,8 +193,7 @@ public class EnergyOrderService {
             trade.setSellOrderId(sell.getId());
             trade.setPricePerKwh(executedPrice);
 
-            // ⚠️ EnergyTrade.amountKwh가 아직 Double이면 여기서 컴파일 에러!
-            //    그 경우 EnergyTrade도 BigDecimal로 바꾸는 게 정석임.
+            // ✅ EnergyTrade.amountKwh도 BigDecimal이어야 함
             trade.setAmountKwh(amount);
 
             trade.setStatus("MATCHED");
@@ -191,13 +232,11 @@ public class EnergyOrderService {
             trade.setSellOrderId(newOrder.getId());
             trade.setPricePerKwh(executedPrice);
 
-            // ⚠️ EnergyTrade.amountKwh가 아직 Double이면 여기서 컴파일 에러!
+            // ✅ EnergyTrade.amountKwh도 BigDecimal이어야 함
             trade.setAmountKwh(amount);
 
             trade.setStatus("MATCHED");
             energyTradeRepository.save(trade);
-
-            // SELL이 들어와 체결가가 BUY 가격이면, BUY가 잠근 금액(=buyPrice 기준)과 동일 → 차액 없음
         }
     }
 
@@ -222,7 +261,7 @@ public class EnergyOrderService {
     }
 
     /**
-     * ✅ release: BUY 주문 취소 시 locked_krw 감소 (buyPrice 기준으로 잡았던 만큼 해제)
+     * ✅ release: BUY 주문 취소 시 locked_krw 감소
      */
     private void releaseMoneyForBuyOrder(EnergyOrder order) {
         Long buyerId = order.getUserId();
@@ -269,7 +308,6 @@ public class EnergyOrderService {
     }
 
     // ✅ 금액 계산: pricePerKwh(int) * amountKwh(BigDecimal)
-    // PoC: 원 단위면 setScale(0)도 가능하지만, 현재는 2자리 유지
     private BigDecimal calcNeedMoneyByPrice(int pricePerKwh, BigDecimal amountKwh) {
         BigDecimal p = BigDecimal.valueOf(pricePerKwh);
         return p.multiply(amountKwh).setScale(2, RoundingMode.HALF_UP);

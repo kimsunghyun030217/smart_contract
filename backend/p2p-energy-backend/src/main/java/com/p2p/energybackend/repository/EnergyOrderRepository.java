@@ -54,4 +54,13 @@ public interface EnergyOrderRepository extends JpaRepository<EnergyOrder, Long> 
             @Param("userId") Long userId,
             Pageable pageable
     );
+
+    // ✅ (추가) 매칭 엔진용: ACTIVE + 만료 전 주문 전체 id 가져오기 (createdAt 오래된 순)
+    @Query("""
+        SELECT o.id FROM EnergyOrder o
+        WHERE o.status = 'ACTIVE'
+          AND o.endTime > CURRENT_TIMESTAMP
+        ORDER BY o.createdAt ASC
+    """)
+    List<Long> findAllActiveOrderIdsForMatching();
 }
