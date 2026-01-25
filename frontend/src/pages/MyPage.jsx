@@ -354,7 +354,7 @@ export default function MyPage() {
 
         {/* ✅ 지갑(잔고) - PoC */}
         <div style={styles.settingsCard}>
-          <h3 style={styles.settingsTitle}>지갑 💰 (PoC)</h3>
+          <h3 style={styles.settingsTitle}>지갑 💰</h3>
 
           <div style={styles.formGrid}>
             <div style={styles.formGroup}>
