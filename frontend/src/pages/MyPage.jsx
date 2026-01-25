@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 
 import { getCoordinates } from "../api/naverApi";
 import { changePassword, updateLocation, getMyInfo } from "../api/authApi";
+import { getMyWallet, setMyWalletBalance } from "../api/walletApi";
 
 import Layout from "../components/Layout";
 
@@ -18,8 +19,18 @@ export default function MyPage() {
     detailAddress: "",
     latitude: "",
     longitude: "",
-    paymentMethod: "",
   });
+
+  // ✅ 지갑 상태
+  const [wallet, setWallet] = useState({
+    totalKrw: 0,
+    lockedKrw: 0,
+    availableKrw: 0,
+    updatedAt: "",
+  });
+
+  // ✅ PoC: 테스트 잔고 입력값 (total_krw 세팅)
+  const [testBalance, setTestBalance] = useState("");
 
   useEffect(() => {
     const username = localStorage.getItem("username");
@@ -52,7 +63,18 @@ export default function MyPage() {
       }
     };
 
+    const fetchWallet = async () => {
+      try {
+        const w = await getMyWallet();
+        setWallet(w);
+        setTestBalance(String(w?.totalKrw ?? 0));
+      } catch (error) {
+        console.error(error);
+      }
+    };
+
     fetchUserInfo();
+    fetchWallet();
   }, [navigate]);
 
   const handleLogout = () => {
@@ -112,18 +134,8 @@ export default function MyPage() {
     }
   };
 
-  const handlePaymentUpdate = () => {
-    if (!userProfile.paymentMethod) {
-      alert("결제 수단을 선택해주세요");
-      return;
-    }
-
-    alert("결제 정보가 저장되었습니다");
-  };
-
   const handleAddressSearch = async () => {
     const address = prompt("주소를 입력하세요\n예) 서울시 강남구 테헤란로 123");
-
     if (!address) return;
 
     try {
@@ -143,6 +155,26 @@ export default function MyPage() {
     } catch (error) {
       console.error(error);
       alert("주소 검색 중 오류가 발생했습니다");
+    }
+  };
+
+  // ✅ PoC: 테스트 잔고 저장 (DB total_krw 업데이트)
+  const handleWalletSave = async () => {
+    const n = Number(testBalance);
+    if (Number.isNaN(n) || n < 0) {
+      alert("0 이상의 숫자를 입력해주세요");
+      return;
+    }
+
+    try {
+      await setMyWalletBalance(n);
+      const w = await getMyWallet();
+      setWallet(w);
+      setTestBalance(String(w?.totalKrw ?? 0));
+      alert("잔고가 저장되었습니다!");
+    } catch (error) {
+      console.error(error);
+      alert("잔고 저장 실패");
     }
   };
 
@@ -320,40 +352,76 @@ export default function MyPage() {
           </button>
         </div>
 
-        {/* 결제 정보 */}
+        {/* ✅ 지갑(잔고) - PoC */}
         <div style={styles.settingsCard}>
-          <h3 style={styles.settingsTitle}>결제 정보 💳</h3>
+          <h3 style={styles.settingsTitle}>지갑 💰 (PoC)</h3>
 
           <div style={styles.formGrid}>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>총 보유금액</label>
+              <input
+                type="text"
+                value={Number(wallet.totalKrw ?? 0).toLocaleString()}
+                style={{
+                  ...styles.input,
+                  background: "#f8fafc",
+                  color: "#94a3b8",
+                }}
+                readOnly
+              />
+            </div>
+
+            <div style={styles.formGroup}>
+              <label style={styles.label}>잠금 금액</label>
+              <input
+                type="text"
+                value={Number(wallet.lockedKrw ?? 0).toLocaleString()}
+                style={{
+                  ...styles.input,
+                  background: "#f8fafc",
+                  color: "#94a3b8",
+                }}
+                readOnly
+              />
+            </div>
+
+            <div style={styles.formGroup}>
+              <label style={styles.label}>사용 가능</label>
+              <input
+                type="text"
+                value={Number(wallet.availableKrw ?? 0).toLocaleString()}
+                style={{
+                  ...styles.input,
+                  background: "#f8fafc",
+                  color: "#94a3b8",
+                }}
+                readOnly
+              />
+            </div>
+
             <div style={{ ...styles.formGroup, gridColumn: "1 / -1" }}>
-              <label style={styles.label}>결제 수단</label>
-              <select
-                value={userProfile.paymentMethod}
-                onChange={(e) =>
-                  setUserProfile((prev) => ({
-                    ...prev,
-                    paymentMethod: e.target.value,
-                  }))
-                }
-                style={styles.select}
-              >
-                <option value="">결제 수단 선택</option>
-                <option value="card">신용/체크카드</option>
-                <option value="bank">계좌이체</option>
-                <option value="kakao">카카오페이</option>
-                <option value="toss">토스페이</option>
-              </select>
+              <label style={styles.label}>잔고 설정 (total_krw)</label>
+              <input
+                type="number"
+                value={testBalance}
+                onChange={(e) => setTestBalance(e.target.value)}
+                style={styles.input}
+                placeholder="예) 500000"
+              />
             </div>
           </div>
 
           <button
             type="button"
-            onClick={handlePaymentUpdate}
+            onClick={handleWalletSave}
             style={styles.sectionSaveBtn}
           >
-            💳 결제 정보 저장
+            💾 잔고 저장
           </button>
         </div>
+
+        {/* (선택) 로그아웃 버튼이 MyPage에 필요하면 여기서 사용 가능 */}
+        {/* <button onClick={handleLogout} style={styles.logoutBtn}>로그아웃</button> */}
       </div>
     </Layout>
   );

@@ -56,6 +56,7 @@ public class SecurityConfig {
                 // ✅ 인증 필요 API
                 .requestMatchers("/api/auth/me").authenticated()
                 .requestMatchers("/api/auth/change-password").authenticated()
+                .requestMatchers("/api/wallet/**").authenticated()
                 .requestMatchers("/orders/**").authenticated()
 
                 .anyRequest().authenticated()
@@ -66,7 +67,7 @@ public class SecurityConfig {
         return http.build();
     }
 
-    @Bean
+    @Bean   
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
 
