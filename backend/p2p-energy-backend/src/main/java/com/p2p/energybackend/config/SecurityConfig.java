@@ -49,7 +49,8 @@ public class SecurityConfig {
                 .requestMatchers(
                     "/api/auth/signup",
                     "/api/auth/login",
-                    "/api/auth/check-username"
+                    "/api/auth/check-username",
+                    "/api/naver-geocoding"
                 ).permitAll()
 
                 // ✅ 인증 필요 API
