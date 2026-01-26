@@ -35,13 +35,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         String path = request.getRequestURI();
 
-        // ✅ OPTIONS는 무조건 통과 (프리플라이트)
+        // ✅ OPTIONS는 무조건 통과
         if (HttpMethod.OPTIONS.matches(request.getMethod())) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        // ✅ "공개 API"만 토큰 없이 통과 (여기만 스킵!)
+        // ✅ 공개 API는 토큰 검사 스킵
         if (path.equals("/api/auth/login")
                 || path.equals("/api/auth/signup")
                 || path.equals("/api/auth/check-username")) {
@@ -50,7 +50,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         String authHeader = request.getHeader("Authorization");
-
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             filterChain.doFilter(request, response);
             return;
@@ -61,25 +60,27 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         try {
             Claims claims = jwtUtil.validateToken(token);
 
-            Long userId = claims.get("userId", Long.class);
+            // ✅ userId 타입 안전하게 파싱 (Long/Integer/String 다 대응)
+            Object rawUserId = claims.get("userId");
+            Long userId = null;
+            if (rawUserId instanceof Long l) userId = l;
+            else if (rawUserId instanceof Integer i) userId = i.longValue();
+            else if (rawUserId != null) userId = Long.valueOf(rawUserId.toString());
 
             if (userId != null && SecurityContextHolder.getContext().getAuthentication() == null) {
 
-                UsernamePasswordAuthenticationToken authentication =
-                        new UsernamePasswordAuthenticationToken(
-                                userId,
-                                null,
-                                List.of(new SimpleGrantedAuthority("ROLE_USER"))
-                        );
-
-                authentication.setDetails(
-                        new WebAuthenticationDetailsSource().buildDetails(request)
+                var authentication = new UsernamePasswordAuthenticationToken(
+                        userId, // ✅ principal = Long userId (컨트롤러 extractUserId와 일치)
+                        null,
+                        List.of(new SimpleGrantedAuthority("ROLE_USER"))
                 );
 
+                authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             }
 
         } catch (Exception e) {
+            // 토큰이 이상하면 인증 세팅 없이 통과 → Security가 막음(401/403)
             System.out.println("JWT 검증 실패: " + e.getMessage());
         }
 

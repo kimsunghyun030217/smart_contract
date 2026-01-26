@@ -4,50 +4,65 @@ import com.p2p.energybackend.service.UserWalletService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 
-import static org.springframework.http.HttpStatus.UNAUTHORIZED;
-
 @RestController
-@RequestMapping("/api/wallet")
+@RequestMapping("/api/wallet/me")
 public class UserWalletController {
 
-    private final UserWalletService walletService;
+    private final UserWalletService userWalletService;
 
-    public UserWalletController(UserWalletService walletService) {
-        this.walletService = walletService;
+    public UserWalletController(UserWalletService userWalletService) {
+        this.userWalletService = userWalletService;
     }
 
     // ✅ 내 지갑 조회
-    @GetMapping("/me")
+    @GetMapping
     public ResponseEntity<?> getMyWallet(Authentication auth) {
         Long userId = extractUserId(auth);
-        return ResponseEntity.ok(walletService.getMyWallet(userId));
+        return ResponseEntity.ok(userWalletService.getMyWallet(userId));
     }
 
-    // ✅ PoC: 내 total_krw 직접 세팅
-    @PutMapping("/me/balance")
-    public ResponseEntity<?> setMyBalance(@RequestBody SetBalanceRequest req, Authentication auth) {
+    // ✅ PoC: total_krw를 입력값으로 "세팅"
+    @PostMapping("/set-total")
+    public ResponseEntity<?> setTotal(@RequestBody SetTotalRequest req, Authentication auth) {
         Long userId = extractUserId(auth);
-        return ResponseEntity.ok(walletService.setMyTotalKrw(userId, req.totalKrw()));
+        return ResponseEntity.ok(userWalletService.setMyTotalKrw(userId, req.totalKrw()));
     }
 
-    public record SetBalanceRequest(BigDecimal totalKrw) {}
+    // ✅ 충전: total_krw += amountKrw
+    @PostMapping("/charge")
+    public ResponseEntity<?> charge(@RequestBody ChargeRequest req, Authentication auth) {
+        Long userId = extractUserId(auth);
+        return ResponseEntity.ok(userWalletService.chargeMyWallet(userId, req.amountKrw()));
+    }
 
-    // ✅ EnergyOrderController랑 동일
+    // ===== Request DTOs =====
+    public record SetTotalRequest(BigDecimal totalKrw) {}
+    public record ChargeRequest(BigDecimal amountKrw) {}
+
+    // ===== 인증 객체에서 userId 추출 =====
     private Long extractUserId(Authentication auth) {
-        if (auth == null || auth.getPrincipal() == null) {
-            throw new ResponseStatusException(UNAUTHORIZED, "인증 필요");
-        }
+        // 프로젝트마다 principal 타입이 다를 수 있어서 "최소 가정" 버전.
+        // 네 JwtAuthenticationFilter에서 auth.getName()에 username을 넣고 있을 가능성이 큼.
+        // 이미 다른 컨트롤러에서 userId 추출 함수를 쓰고 있다면 그걸 그대로 복붙해서 쓰는 게 베스트.
 
+        // 1) principal이 커스텀 객체면 (예: CustomUserDetails)
+        Object principal = auth.getPrincipal();
         try {
-            Object principal = auth.getPrincipal();
-            if (principal instanceof Long) return (Long) principal;
-            return Long.valueOf(principal.toString());
+            // getUserId()가 있으면 그걸 사용
+            var m = principal.getClass().getMethod("getUserId");
+            Object v = m.invoke(principal);
+            if (v instanceof Long l) return l;
+            if (v instanceof Integer i) return i.longValue();
+        } catch (Exception ignored) {}
+
+        // 2) principal이 userId를 문자열로 들고 있는 케이스(드묾) 대비
+        try {
+            return Long.parseLong(auth.getName());
         } catch (Exception e) {
-            throw new ResponseStatusException(UNAUTHORIZED, "유효하지 않은 인증 정보");
+            throw new IllegalStateException("인증 객체에서 userId 추출 실패. principal=" + principal);
         }
     }
 }

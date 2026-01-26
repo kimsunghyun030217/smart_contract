@@ -46,6 +46,29 @@ public class UserWalletService {
         return WalletResponse.from(w);
     }
 
+    // ✅ 충전: total_krw += amountKrw
+    @Transactional
+    public WalletResponse chargeMyWallet(Long userId, BigDecimal amountKrw) {
+        if (amountKrw == null) throw new IllegalArgumentException("amountKrw 필요");
+        amountKrw = amountKrw.setScale(2, RoundingMode.HALF_UP);
+        if (amountKrw.signum() <= 0) throw new IllegalArgumentException("0 초과만 가능");
+
+        UserWallet w = repo.findByUserIdLocked(userId)
+                .orElseGet(() -> repo.save(new UserWallet(userId)));
+
+        w.setTotalKrw(w.getTotalKrw().add(amountKrw));
+        w.setUpdatedAt(LocalDateTime.now());
+        repo.save(w);
+
+        return WalletResponse.from(w);
+    }
+
+    // (옵션) 컨트롤러가 charge(...)를 부른다면 별칭으로 제공
+    @Transactional
+    public WalletResponse charge(Long userId, BigDecimal amountKrw) {
+        return chargeMyWallet(userId, amountKrw);
+    }
+
     public record WalletResponse(
             BigDecimal totalKrw,
             BigDecimal lockedKrw,

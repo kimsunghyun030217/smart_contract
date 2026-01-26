@@ -3,7 +3,12 @@ import { useNavigate } from "react-router-dom";
 
 import { getCoordinates } from "../api/naverApi";
 import { changePassword, updateLocation, getMyInfo } from "../api/authApi";
-import { getMyWallet, setMyWalletBalance } from "../api/walletApi";
+
+// ✅ 현금 지갑 API (충전만 쓸거라 set 제거)
+import { getMyWallet, chargeMyWallet } from "../api/walletApi";
+
+// ✅ 에너지 지갑 API (충전만 쓸거라 set 제거)
+import { getMyEnergyWallet, chargeMyEnergy } from "../api/energyWalletApi";
 
 import Layout from "../components/Layout";
 
@@ -21,7 +26,7 @@ export default function MyPage() {
     longitude: "",
   });
 
-  // ✅ 지갑 상태
+  // ✅ 현금 지갑 상태
   const [wallet, setWallet] = useState({
     totalKrw: 0,
     lockedKrw: 0,
@@ -29,8 +34,16 @@ export default function MyPage() {
     updatedAt: "",
   });
 
-  // ✅ PoC: 테스트 잔고 입력값 (total_krw 세팅)
-  const [testBalance, setTestBalance] = useState("");
+  // ✅ 에너지 지갑 상태
+  const [energyWallet, setEnergyWallet] = useState({
+    totalKwh: 0,
+    lockedKwh: 0,
+    availableKwh: 0,
+  });
+
+  // ✅ 충전 입력값들
+  const [cashChargeAmount, setCashChargeAmount] = useState("");
+  const [energyChargeAmount, setEnergyChargeAmount] = useState("");
 
   useEffect(() => {
     const username = localStorage.getItem("username");
@@ -50,7 +63,6 @@ export default function MyPage() {
     const fetchUserInfo = async () => {
       try {
         const data = await getMyInfo();
-
         setUserProfile((prev) => ({
           ...prev,
           address: data.address || "",
@@ -67,7 +79,15 @@ export default function MyPage() {
       try {
         const w = await getMyWallet();
         setWallet(w);
-        setTestBalance(String(w?.totalKrw ?? 0));
+      } catch (error) {
+        console.error(error);
+      }
+    };
+
+    const fetchEnergyWallet = async () => {
+      try {
+        const ew = await getMyEnergyWallet();
+        setEnergyWallet(ew);
       } catch (error) {
         console.error(error);
       }
@@ -75,14 +95,8 @@ export default function MyPage() {
 
     fetchUserInfo();
     fetchWallet();
+    fetchEnergyWallet();
   }, [navigate]);
-
-  const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("username");
-    alert("로그아웃 되었습니다");
-    navigate("/login");
-  };
 
   const handlePasswordChange = async () => {
     const { currentPassword, newPassword, confirmPassword } = userProfile;
@@ -109,15 +123,9 @@ export default function MyPage() {
   };
 
   const handleAddressUpdate = async () => {
-    if (!userProfile.address) {
-      alert("주소를 입력해주세요");
-      return;
-    }
-
-    if (!userProfile.latitude || !userProfile.longitude) {
-      alert("주소 검색을 먼저 해주세요");
-      return;
-    }
+    if (!userProfile.address) return alert("주소를 입력해주세요");
+    if (!userProfile.latitude || !userProfile.longitude)
+      return alert("주소 검색을 먼저 해주세요");
 
     try {
       await updateLocation(
@@ -126,7 +134,6 @@ export default function MyPage() {
         userProfile.address,
         userProfile.detailAddress
       );
-
       alert("주소 정보가 저장되었습니다!");
     } catch (error) {
       console.error(error);
@@ -158,23 +165,37 @@ export default function MyPage() {
     }
   };
 
-  // ✅ PoC: 테스트 잔고 저장 (DB total_krw 업데이트)
-  const handleWalletSave = async () => {
-    const n = Number(testBalance);
-    if (Number.isNaN(n) || n < 0) {
-      alert("0 이상의 숫자를 입력해주세요");
-      return;
-    }
+  // ✅ 현금 지갑 충전(total += amount)
+  const handleCashCharge = async () => {
+    const n = Number(cashChargeAmount);
+    if (Number.isNaN(n) || n <= 0) return alert("0보다 큰 금액을 입력해주세요");
 
     try {
-      await setMyWalletBalance(n);
+      await chargeMyWallet(n);
       const w = await getMyWallet();
       setWallet(w);
-      setTestBalance(String(w?.totalKrw ?? 0));
-      alert("잔고가 저장되었습니다!");
+      setCashChargeAmount("");
+      alert("현금이 충전되었습니다!");
     } catch (error) {
       console.error(error);
-      alert("잔고 저장 실패");
+      alert("현금 충전 실패");
+    }
+  };
+
+  // ✅ 에너지 지갑 충전(total += amount)
+  const handleEnergyCharge = async () => {
+    const n = Number(energyChargeAmount);
+    if (Number.isNaN(n) || n <= 0) return alert("0보다 큰 kWh를 입력해주세요");
+
+    try {
+      await chargeMyEnergy(n);
+      const ew = await getMyEnergyWallet();
+      setEnergyWallet(ew);
+      setEnergyChargeAmount("");
+      alert("에너지가 충전되었습니다!");
+    } catch (error) {
+      console.error(error);
+      alert("에너지 충전 실패");
     }
   };
 
@@ -352,9 +373,9 @@ export default function MyPage() {
           </button>
         </div>
 
-        {/* ✅ 지갑(잔고) - PoC */}
+        {/* ✅ 현금 지갑 */}
         <div style={styles.settingsCard}>
-          <h3 style={styles.settingsTitle}>지갑 💰</h3>
+          <h3 style={styles.settingsTitle}>현금 지갑 💰</h3>
 
           <div style={styles.formGrid}>
             <div style={styles.formGroup}>
@@ -399,103 +420,106 @@ export default function MyPage() {
               />
             </div>
 
-            <div style={{ ...styles.formGroup, gridColumn: "1 / -1" }}>
-              <label style={styles.label}>잔고 설정 (total_krw)</label>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>충전 금액(원)</label>
               <input
                 type="number"
-                value={testBalance}
-                onChange={(e) => setTestBalance(e.target.value)}
+                value={cashChargeAmount}
+                onChange={(e) => setCashChargeAmount(e.target.value)}
                 style={styles.input}
                 placeholder="예) 500000"
               />
             </div>
-          </div>
 
-          <button
-            type="button"
-            onClick={handleWalletSave}
-            style={styles.sectionSaveBtn}
-          >
-            💾 잔고 저장
-          </button>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>&nbsp;</label>
+              <button
+                type="button"
+                onClick={handleCashCharge}
+                style={styles.inlineBtn}
+              >
+                💰 충전
+              </button>
+            </div>
+          </div>
         </div>
 
-        {/* (선택) 로그아웃 버튼이 MyPage에 필요하면 여기서 사용 가능 */}
-        {/* <button onClick={handleLogout} style={styles.logoutBtn}>로그아웃</button> */}
+        {/* ✅ 에너지 지갑 */}
+        <div style={styles.settingsCard}>
+          <h3 style={styles.settingsTitle}>에너지 지갑 ⚡</h3>
+
+          <div style={styles.formGrid}>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>총 보유 전력(kWh)</label>
+              <input
+                type="text"
+                value={Number(energyWallet.totalKwh ?? 0).toLocaleString()}
+                style={{
+                  ...styles.input,
+                  background: "#f8fafc",
+                  color: "#94a3b8",
+                }}
+                readOnly
+              />
+            </div>
+
+            <div style={styles.formGroup}>
+              <label style={styles.label}>잠금 전력(kWh)</label>
+              <input
+                type="text"
+                value={Number(energyWallet.lockedKwh ?? 0).toLocaleString()}
+                style={{
+                  ...styles.input,
+                  background: "#f8fafc",
+                  color: "#94a3b8",
+                }}
+                readOnly
+              />
+            </div>
+
+            <div style={styles.formGroup}>
+              <label style={styles.label}>사용 가능(kWh)</label>
+              <input
+                type="text"
+                value={Number(energyWallet.availableKwh ?? 0).toLocaleString()}
+                style={{
+                  ...styles.input,
+                  background: "#f8fafc",
+                  color: "#94a3b8",
+                }}
+                readOnly
+              />
+            </div>
+
+            <div style={styles.formGroup}>
+              <label style={styles.label}>충전(kWh)</label>
+              <input
+                type="number"
+                value={energyChargeAmount}
+                onChange={(e) => setEnergyChargeAmount(e.target.value)}
+                style={styles.input}
+                placeholder="예) 10"
+              />
+            </div>
+
+            <div style={styles.formGroup}>
+              <label style={styles.label}>&nbsp;</label>
+              <button
+                type="button"
+                onClick={handleEnergyCharge}
+                style={styles.inlineBtn}
+              >
+                ⚡ 충전
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </Layout>
   );
 }
 
 const styles = {
-  container: { display: "flex", minHeight: "100vh", background: "#f8fafc" },
-  sidebar: {
-    width: "280px",
-    background: "linear-gradient(180deg, #0f172a 0%, #1e293b 100%)",
-    padding: "32px 24px",
-    display: "flex",
-    flexDirection: "column",
-    boxShadow: "4px 0 24px rgba(0,0,0,0.1)",
-  },
-  logo: {
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-    marginBottom: "32px",
-    paddingBottom: "24px",
-    borderBottom: "1px solid rgba(255,255,255,0.1)",
-  },
-  logoText: {
-    fontSize: "20px",
-    fontWeight: "800",
-    color: "white",
-    margin: 0,
-  },
-  nav: { display: "flex", flexDirection: "column", gap: "8px", flex: 1 },
-  navDivider: {
-    fontSize: "11px",
-    fontWeight: "700",
-    color: "#64748b",
-    textTransform: "uppercase",
-    letterSpacing: "1px",
-    padding: "16px 16px 8px 16px",
-    marginTop: "8px",
-  },
-  navItem: {
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-    padding: "14px 16px",
-    background: "transparent",
-    border: "none",
-    borderRadius: "12px",
-    color: "#94a3b8",
-    fontSize: "15px",
-    fontWeight: "600",
-    cursor: "pointer",
-    transition: "all 0.2s",
-    textAlign: "left",
-  },
-  navItemActive: {
-    background: "linear-gradient(135deg, #10b981 0%, #3b82f6 100%)",
-    color: "white",
-  },
-  logoutBtn: {
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-    padding: "14px 16px",
-    background: "rgba(239,68,68,0.1)",
-    border: "1px solid rgba(239,68,68,0.3)",
-    borderRadius: "12px",
-    color: "#ef4444",
-    fontSize: "15px",
-    fontWeight: "600",
-    cursor: "pointer",
-    transition: "all 0.2s",
-    marginTop: "auto",
-  },
-  main: { flex: 1, padding: "32px", overflowY: "auto" },
   header: { marginBottom: "32px" },
   headerTitle: {
     fontSize: "32px",
@@ -533,15 +557,6 @@ const styles = {
     fontWeight: "600",
     outline: "none",
     transition: "all 0.2s",
-  },
-  select: {
-    padding: "14px 16px",
-    fontSize: "15px",
-    border: "2px solid #e2e8f0",
-    borderRadius: "12px",
-    fontWeight: "600",
-    outline: "none",
-    background: "white",
   },
   addressInputGroup: { display: "flex", gap: "12px" },
   searchBtn: {

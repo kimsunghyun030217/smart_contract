@@ -17,7 +17,7 @@ public interface EnergyOrderRepository extends JpaRepository<EnergyOrder, Long> 
     // ✅ 완료 주문: COMPLETED만
     List<EnergyOrder> findByUserIdAndStatusOrderByCreatedAtDesc(Long userId, String status);
 
-    // ✅ BUY 들어왔을 때: 매칭 가능한 SELL 후보들 (정렬됨) + 락 + 자가매칭 방지
+    // ✅ BUY 들어왔을 때: 매칭 가능한 SELL 후보들 (가격순) + 락 + 자가매칭 방지
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
         SELECT o FROM EnergyOrder o
@@ -36,7 +36,7 @@ public interface EnergyOrderRepository extends JpaRepository<EnergyOrder, Long> 
             Pageable pageable
     );
 
-    // ✅ SELL 들어왔을 때: 매칭 가능한 BUY 후보들 (정렬됨) + 락 + 자가매칭 방지
+    // ✅ SELL 들어왔을 때: 매칭 가능한 BUY 후보들 (가격순) + 락 + 자가매칭 방지
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
         SELECT o FROM EnergyOrder o
@@ -55,7 +55,7 @@ public interface EnergyOrderRepository extends JpaRepository<EnergyOrder, Long> 
             Pageable pageable
     );
 
-    // ✅ (추가) 매칭 엔진용: ACTIVE + 만료 전 주문 전체 id 가져오기 (createdAt 오래된 순)
+    // ✅ 매칭 엔진용: ACTIVE + 만료 전 주문 전체 id 가져오기 (createdAt 오래된 순)
     @Query("""
         SELECT o.id FROM EnergyOrder o
         WHERE o.status = 'ACTIVE'
@@ -63,4 +63,42 @@ public interface EnergyOrderRepository extends JpaRepository<EnergyOrder, Long> 
         ORDER BY o.createdAt ASC
     """)
     List<Long> findAllActiveOrderIdsForMatching();
+
+    // ✅ (추가) BUY 후보군 넓게 가져오기(정렬: 오래된 순) → 서비스에서 가격/거리/신뢰 Top100 재컷
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        SELECT o FROM EnergyOrder o
+        WHERE o.orderType = 'sell'
+          AND o.status = 'ACTIVE'
+          AND o.amountKwh = :amountKwh
+          AND o.pricePerKwh <= :buyPrice
+          AND o.endTime > CURRENT_TIMESTAMP
+          AND o.userId <> :userId
+        ORDER BY o.createdAt ASC
+    """)
+    List<EnergyOrder> findSellCandidatesForBuyLocked(
+            @Param("buyPrice") int buyPrice,
+            @Param("amountKwh") BigDecimal amountKwh,
+            @Param("userId") Long userId,
+            Pageable pageable
+    );
+
+    // ✅ (추가) SELL 후보군 넓게 가져오기(정렬: 오래된 순) → 서비스에서 가격/거리/오래된 Top100 재컷
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        SELECT o FROM EnergyOrder o
+        WHERE o.orderType = 'buy'
+          AND o.status = 'ACTIVE'
+          AND o.amountKwh = :amountKwh
+          AND o.pricePerKwh >= :sellPrice
+          AND o.endTime > CURRENT_TIMESTAMP
+          AND o.userId <> :userId
+        ORDER BY o.createdAt ASC
+    """)
+    List<EnergyOrder> findBuyCandidatesForSellLocked(
+            @Param("sellPrice") int sellPrice,
+            @Param("amountKwh") BigDecimal amountKwh,
+            @Param("userId") Long userId,
+            Pageable pageable
+    );
 }

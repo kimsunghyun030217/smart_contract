@@ -2,7 +2,6 @@ import axios from "axios";
 
 const API_URL = "http://localhost:8080/api/wallet";
 
-// 공통 axios instance
 const api = axios.create({
   baseURL: API_URL,
 });
@@ -16,14 +15,15 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// ✅ 내 지갑 조회
+// ✅ 내 지갑 조회: GET /api/wallet/me
 export const getMyWallet = async () => {
   const res = await api.get("/me");
   return res.data;
 };
 
-// ✅ PoC: 내 total_krw 직접 세팅
-export const setMyWalletBalance = async (totalKrw) => {
-  const res = await api.put("/me/balance", { totalKrw });
+// ✅ 충전(+누적): POST /api/wallet/me/charge
+// 백엔드가 BigDecimal 받으니까 숫자/문자열 다 OK (ex: "1000000")
+export const chargeMyWallet = async (amountKrw) => {
+  const res = await api.post("/me/charge", { amountKrw });
   return res.data;
 };

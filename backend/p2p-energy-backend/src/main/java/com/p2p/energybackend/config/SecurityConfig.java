@@ -58,6 +58,10 @@ public class SecurityConfig {
                 .requestMatchers("/api/auth/change-password").authenticated()
                 .requestMatchers("/api/wallet/**").authenticated()
                 .requestMatchers("/orders/**").authenticated()
+                .requestMatchers("/energy-wallet/**").authenticated()
+                .requestMatchers("/api/energy-wallet/**").authenticated()
+
+
 
                 .anyRequest().authenticated()
             )
