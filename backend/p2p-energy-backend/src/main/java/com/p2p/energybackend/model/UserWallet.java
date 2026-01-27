@@ -18,10 +18,11 @@ public class UserWallet {
     @Column(name = "locked_krw", nullable = false, precision = 18, scale = 2)
     private BigDecimal lockedKrw = BigDecimal.ZERO;
 
-    @Column(name = "updated_at")
+    // ✅ DB가 DEFAULT / ON UPDATE로 자동 관리 (JPA는 읽기만)
+    @Column(name = "updated_at", insertable = false, updatable = false)
     private LocalDateTime updatedAt;
 
-    public UserWallet() {}
+    protected UserWallet() {}
 
     public UserWallet(Long userId) {
         this.userId = userId;
@@ -39,7 +40,6 @@ public class UserWallet {
     public void setLockedKrw(BigDecimal lockedKrw) { this.lockedKrw = lockedKrw; }
 
     public LocalDateTime getUpdatedAt() { return updatedAt; }
-    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
 
     @Transient
     public BigDecimal getAvailableKrw() {

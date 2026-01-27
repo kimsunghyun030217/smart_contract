@@ -20,6 +20,7 @@ public class UserWalletService {
 
     @Transactional(readOnly = true)
     public WalletResponse getMyWallet(Long userId) {
+        // 조회만: 없으면 "가짜 지갑" 반환(저장 안 함)
         UserWallet w = repo.findByUserId(userId).orElseGet(() -> new UserWallet(userId));
         return WalletResponse.from(w);
     }
@@ -36,11 +37,14 @@ public class UserWalletService {
 
         // locked보다 total을 낮추면 논리 깨짐 → 막기
         if (totalKrw.compareTo(w.getLockedKrw()) < 0) {
-            throw new IllegalStateException("잠긴 금액(locked_krw=" + w.getLockedKrw() + ")보다 total_krw를 낮출 수 없음");
+            throw new IllegalStateException(
+                    "잠긴 금액(locked_krw=" + w.getLockedKrw() + ")보다 total_krw를 낮출 수 없음"
+            );
         }
 
         w.setTotalKrw(totalKrw);
-        w.setUpdatedAt(LocalDateTime.now()); // DB에서도 업데이트되지만 응답 최신화용
+
+        // ✅ updated_at은 DB가 자동 갱신 (setUpdatedAt 제거)
         repo.save(w);
 
         return WalletResponse.from(w);
@@ -57,13 +61,17 @@ public class UserWalletService {
                 .orElseGet(() -> repo.save(new UserWallet(userId)));
 
         w.setTotalKrw(w.getTotalKrw().add(amountKrw));
-        w.setUpdatedAt(LocalDateTime.now());
+
+        // ✅ updated_at은 DB가 자동 갱신 (setUpdatedAt 제거)
         repo.save(w);
 
+        // ⚠️ DB가 updated_at을 갱신하지만,
+        // 응답에 최신 updated_at이 반드시 필요하면 save 후 refresh가 필요할 수 있음.
+        // (대부분은 다음 조회 때 최신 값으로 잘 보임)
         return WalletResponse.from(w);
     }
 
-    // (옵션) 컨트롤러가 charge(...)를 부른다면 별칭으로 제공
+    // (옵션) 별칭
     @Transactional
     public WalletResponse charge(Long userId, BigDecimal amountKrw) {
         return chargeMyWallet(userId, amountKrw);

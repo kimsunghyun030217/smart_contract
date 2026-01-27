@@ -60,6 +60,8 @@ public class SecurityConfig {
                 .requestMatchers("/orders/**").authenticated()
                 .requestMatchers("/energy-wallet/**").authenticated()
                 .requestMatchers("/api/energy-wallet/**").authenticated()
+                .requestMatchers(HttpMethod.POST, "/api/wallet/me/charge").permitAll()
+
 
 
 
