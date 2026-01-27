@@ -1,11 +1,17 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import Layout from "../components/Layout";
+
+const API_BASE = "http://localhost:8080";
 
 export default function BuyPage() {
   const [amount, setAmount] = useState("");
   const [price, setPrice] = useState("");
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
+
+  // ✅ 최소 종료시간 표시용
+  const [minEndTime, setMinEndTime] = useState("");
+  const [minEndMsg, setMinEndMsg] = useState("");
 
   // ✅ 추가: 가중치(0~1). 합은 자동으로 1 되게 정규화
   const [weights, setWeights] = useState({
@@ -22,14 +28,15 @@ export default function BuyPage() {
     return { price: p / sum, distance: d / sum, trust: t / sum };
   };
 
-  // ✅ 슬라이더 변경 시 합계 자동 1로 맞춤
   const setWeight = (key, value) => {
     const v = clamp01(value);
-    setWeights((prev) => normalize(
-      key === "price" ? v : prev.price,
-      key === "distance" ? v : prev.distance,
-      key === "trust" ? v : prev.trust
-    ));
+    setWeights((prev) =>
+      normalize(
+        key === "price" ? v : prev.price,
+        key === "distance" ? v : prev.distance,
+        key === "trust" ? v : prev.trust
+      )
+    );
   };
 
   const presets = {
@@ -46,13 +53,78 @@ export default function BuyPage() {
     return `가격 ${p}% · 거리 ${d}% · 신뢰 ${t}%`;
   }, [weights]);
 
+  // =========================================
+  // ✅ [추가] 최소 종료시간(minEndTime) 조회
+  // - startTime/amount 바뀌면 서버에 물어봄
+  // - 너무 짧은 endTime이면 자동 보정
+  // =========================================
+  useEffect(() => {
+    async function fetchMinEndTime() {
+      setMinEndMsg("");
+      setMinEndTime("");
+
+      if (!startTime || !amount) return;
+
+      const amountNum = Number(amount);
+      if (!Number.isFinite(amountNum) || amountNum <= 0) return;
+
+      try {
+        const qs = new URLSearchParams({
+          startTime: startTime + ":00",
+          amountKwh: String(amountNum),
+        });
+
+        const res = await fetch(`${API_BASE}/orders/min-end-time?${qs.toString()}`);
+        const txt = await res.text();
+
+        if (!res.ok) {
+          setMinEndMsg(txt || "최소 종료시간 계산 실패");
+          return;
+        }
+
+        const data = JSON.parse(txt);
+        const iso = data.minEndTime; // ex) "2026-01-27T22:30:00"
+        if (!iso) return;
+
+        const localVal = iso.slice(0, 16); // datetime-local 포맷(YYYY-MM-DDTHH:mm)
+        setMinEndTime(localVal);
+
+        // endTime이 없거나, minEndTime보다 빠르면 자동 보정
+        if (!endTime || endTime < localVal) {
+          setEndTime(localVal);
+        }
+      } catch (e) {
+        console.error(e);
+        setMinEndMsg("서버 연결 실패(최소 종료시간)");
+      }
+    }
+
+    // 아주 짧은 디바운스(타이핑 중 과호출 방지)
+    const t = setTimeout(fetchMinEndTime, 200);
+    return () => clearTimeout(t);
+  }, [startTime, amount]); // endTime은 의도적으로 제외
+
+  // endTime을 사용자가 바꿀 때도 minEndTime보다 빠르면 막기
+  function onChangeEndTime(v) {
+    if (minEndTime && v < minEndTime) {
+      alert(`종료 시간은 최소 ${minEndTime.replace("T", " ")} 이후여야 합니다.`);
+      setEndTime(minEndTime);
+      return;
+    }
+    setEndTime(v);
+  }
+
   async function submitBuyOrder() {
     if (!amount || !price || !startTime || !endTime) {
       alert("모든 값을 입력해주세요.");
       return;
     }
 
-    // ✅ 주문 payload에 가중치 포함
+    if (minEndTime && endTime < minEndTime) {
+      alert(`종료 시간은 최소 ${minEndTime.replace("T", " ")} 이후여야 합니다.`);
+      return;
+    }
+
     const order = {
       orderType: "buy",
       pricePerKwh: Number(price),
@@ -68,7 +140,7 @@ export default function BuyPage() {
     try {
       const token = localStorage.getItem("token");
 
-      const res = await fetch("http://localhost:8080/orders", {
+      const res = await fetch(`${API_BASE}/orders`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -83,7 +155,9 @@ export default function BuyPage() {
         setPrice("");
         setStartTime("");
         setEndTime("");
-        setWeights(presets.balanced); // ✅ 초기값으로 리셋
+        setMinEndTime("");
+        setMinEndMsg("");
+        setWeights(presets.balanced);
       } else {
         const msg = await res.text().catch(() => "");
         alert("주문 등록 실패! " + msg);
@@ -180,13 +254,25 @@ export default function BuyPage() {
                     type="datetime-local"
                     style={timeInput}
                     value={endTime}
-                    onChange={(e) => setEndTime(e.target.value)}
+                    min={minEndTime || undefined}   // ✅ 핵심: 최소값 제한
+                    onChange={(e) => onChangeEndTime(e.target.value)}
                   />
                 </div>
               </div>
+
+              {/* ✅ 최소 종료시간 안내 */}
+              {(minEndTime || minEndMsg) && (
+                <div style={minEndHint}>
+                  {minEndTime ? (
+                    <>✅ 최소 종료시간: <b>{minEndTime.replace("T", " ")}</b> (7kW 기준 + 버퍼)</>
+                  ) : (
+                    <>⚠️ {minEndMsg}</>
+                  )}
+                </div>
+              )}
             </div>
 
-            {/* ✅ 추가: 매칭 가중치 카드 */}
+            {/* ✅ 매칭 가중치 카드 */}
             <div style={weightCard}>
               <div style={weightTop}>
                 <div style={weightTitle}>매칭 기준 설정</div>
@@ -209,7 +295,6 @@ export default function BuyPage() {
               </div>
 
               <div style={weightGrid}>
-                {/* 가격 */}
                 <div style={weightItem}>
                   <div style={weightLabelRow}>
                     <span style={weightLabel}>가격 중요도</span>
@@ -227,7 +312,6 @@ export default function BuyPage() {
                   <div style={weightHint}>가격이 유리한 상대를 더 우선 매칭</div>
                 </div>
 
-                {/* 거리 */}
                 <div style={weightItem}>
                   <div style={weightLabelRow}>
                     <span style={weightLabel}>거리 중요도</span>
@@ -245,7 +329,6 @@ export default function BuyPage() {
                   <div style={weightHint}>가까운 상대를 더 우선 매칭</div>
                 </div>
 
-                {/* 신뢰 */}
                 <div style={weightItem}>
                   <div style={weightLabelRow}>
                     <span style={weightLabel}>신뢰 중요도</span>
@@ -278,9 +361,7 @@ export default function BuyPage() {
                 </div>
                 <div style={estimateRow}>
                   <span style={estimateLabel}>희망 단가</span>
-                  <span style={estimateValue}>
-                    ₩{parseFloat(price).toLocaleString()}
-                  </span>
+                  <span style={estimateValue}>₩{parseFloat(price).toLocaleString()}</span>
                 </div>
                 <div style={estimateDivider} />
                 <div style={estimateRow}>
@@ -292,18 +373,7 @@ export default function BuyPage() {
               </div>
             )}
 
-            <button
-              style={primaryBtn}
-              onClick={submitBuyOrder}
-              onMouseEnter={(e) => {
-                e.target.style.transform = "translateY(-2px)";
-                e.target.style.boxShadow = "0 6px 20px rgba(59, 130, 246, 0.4)";
-              }}
-              onMouseLeave={(e) => {
-                e.target.style.transform = "translateY(0)";
-                e.target.style.boxShadow = "0 4px 16px rgba(59, 130, 246, 0.3)";
-              }}
-            >
+            <button style={primaryBtn} onClick={submitBuyOrder}>
               <span style={btnIcon}>✓</span>
               구매 주문 등록하기
             </button>
@@ -316,15 +386,11 @@ export default function BuyPage() {
   );
 }
 
-const container = {
-  padding: "48px 32px",
-  maxWidth: 800,
-  margin: "0 auto",
-};
+/* ===== styles ===== */
 
+const container = { padding: "48px 32px", maxWidth: 800, margin: "0 auto" };
 const header = { marginBottom: 48 };
 const headerContent = { display: "flex", alignItems: "center", gap: 20 };
-
 const iconWrapper = {
   width: 64,
   height: 64,
@@ -335,9 +401,7 @@ const iconWrapper = {
   justifyContent: "center",
   boxShadow: "0 8px 24px rgba(59, 130, 246, 0.3)",
 };
-
 const icon = { fontSize: 32 };
-
 const title = {
   fontSize: 36,
   fontWeight: 800,
@@ -347,11 +411,8 @@ const title = {
   WebkitBackgroundClip: "text",
   WebkitTextFillColor: "transparent",
 };
-
 const subtitle = { fontSize: 16, color: "#64748b", margin: 0 };
-
 const cardWrapper = { display: "flex", justifyContent: "center" };
-
 const card = {
   background: "white",
   padding: 48,
@@ -361,9 +422,7 @@ const card = {
   width: "100%",
   maxWidth: 700,
 };
-
 const cardHeader = { marginBottom: 32 };
-
 const cardTitle = { fontSize: 28, fontWeight: 700, margin: 0, color: "#1f2937" };
 
 const formGrid = {
@@ -372,9 +431,7 @@ const formGrid = {
   gap: 24,
   marginBottom: 28,
 };
-
 const inputGroup = { display: "flex", flexDirection: "column" };
-
 const label = {
   display: "flex",
   alignItems: "center",
@@ -384,11 +441,8 @@ const label = {
   marginBottom: 10,
   gap: 6,
 };
-
 const labelIcon = { fontSize: 16 };
-
 const inputWrapper = { position: "relative" };
-
 const input = {
   width: "100%",
   padding: "14px 16px",
@@ -401,7 +455,6 @@ const input = {
   transition: "all 0.2s ease",
   boxSizing: "border-box",
 };
-
 const inputUnit = {
   position: "absolute",
   right: 16,
@@ -414,18 +467,14 @@ const inputUnit = {
 };
 
 const timeSection = { marginBottom: 20 };
-
 const timeRow = {
   display: "grid",
   gridTemplateColumns: "1fr auto 1fr",
   gap: 16,
   alignItems: "center",
 };
-
 const timeBox = { display: "flex", flexDirection: "column", gap: 8 };
-
 const timeLabel = { fontSize: 13, fontWeight: 600, color: "#6b7280" };
-
 const timeInput = {
   padding: "14px 12px",
   fontSize: 14,
@@ -437,15 +486,22 @@ const timeInput = {
   width: "100%",
   boxSizing: "border-box",
 };
-
 const arrowIcon = {
   fontSize: 24,
   color: "#3b82f6",
   fontWeight: 700,
   marginTop: 20,
 };
+const minEndHint = {
+  marginTop: 10,
+  fontSize: 12,
+  color: "#475569",
+  background: "#f1f5f9",
+  border: "1px solid #e2e8f0",
+  padding: "10px 12px",
+  borderRadius: 12,
+};
 
-// ✅ 가중치 카드 스타일
 const weightCard = {
   background: "#f8fafc",
   border: "1px solid #e2e8f0",
@@ -453,7 +509,6 @@ const weightCard = {
   borderRadius: 16,
   marginBottom: 24,
 };
-
 const weightTop = {
   display: "flex",
   justifyContent: "space-between",
@@ -461,17 +516,9 @@ const weightTop = {
   gap: 12,
   marginBottom: 12,
 };
-
 const weightTitle = { fontWeight: 900, color: "#0f172a" };
 const weightSummary = { fontSize: 12, fontWeight: 800, color: "#64748b" };
-
-const presetRow = {
-  display: "flex",
-  gap: 8,
-  flexWrap: "wrap",
-  marginBottom: 14,
-};
-
+const presetRow = { display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 };
 const presetBtn = {
   padding: "8px 10px",
   borderRadius: 12,
@@ -482,31 +529,25 @@ const presetBtn = {
   fontSize: 12,
   color: "#334155",
 };
-
 const weightGrid = { display: "grid", gap: 14 };
-
 const weightItem = {
   background: "white",
   border: "1px solid #e2e8f0",
   borderRadius: 14,
   padding: 14,
 };
-
 const weightLabelRow = {
   display: "flex",
   justifyContent: "space-between",
   alignItems: "center",
   marginBottom: 8,
 };
-
 const weightLabel = { fontSize: 13, fontWeight: 900, color: "#0f172a" };
 const weightPct = { fontSize: 12, fontWeight: 900, color: "#2563eb" };
-
 const range = { width: "100%" };
 const weightHint = { fontSize: 12, color: "#64748b", marginTop: 6 };
 const weightFootnote = { fontSize: 12, color: "#94a3b8", marginTop: 10 };
 
-// 예상 금액 카드
 const estimateCard = {
   background: "#f0f9ff",
   padding: 24,
@@ -514,22 +555,16 @@ const estimateCard = {
   marginBottom: 24,
   border: "1px solid #bae6fd",
 };
-
 const estimateRow = {
   display: "flex",
   justifyContent: "space-between",
   alignItems: "center",
   marginBottom: 10,
 };
-
 const estimateLabel = { fontSize: 14, color: "#475569", fontWeight: 600 };
-
 const estimateValue = { fontSize: 15, fontWeight: 700, color: "#0f172a" };
-
 const estimateDivider = { height: 1, background: "#bae6fd", margin: "16px 0" };
-
 const estimateLabelTotal = { fontSize: 15, color: "#0c4a6e", fontWeight: 700 };
-
 const estimateValueTotal = { fontSize: 20, fontWeight: 900, color: "#0c4a6e" };
 
 const primaryBtn = {
@@ -550,9 +585,7 @@ const primaryBtn = {
   transition: "all 0.3s ease",
   marginBottom: 20,
 };
-
 const btnIcon = { fontSize: 20 };
-
 const notice = {
   fontSize: 13,
   color: "#6b7280",

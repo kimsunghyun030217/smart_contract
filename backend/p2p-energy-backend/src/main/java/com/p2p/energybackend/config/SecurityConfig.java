@@ -34,11 +34,11 @@ public class SecurityConfig {
             .csrf(AbstractHttpConfigurer::disable)
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
-            // ✅ 기본 로그인/Basic 인증 끄기 (generated password 방지 + 충돌 제거)
+            // ✅ 기본 로그인/Basic 인증 끄기
             .formLogin(AbstractHttpConfigurer::disable)
             .httpBasic(AbstractHttpConfigurer::disable)
 
-            // ✅ Security에 CORS를 "명시적으로" 연결
+            // ✅ CORS 연결
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
 
             .authorizeHttpRequests(auth -> auth
@@ -53,17 +53,22 @@ public class SecurityConfig {
                     "/api/naver-geocoding"
                 ).permitAll()
 
-                // ✅ 인증 필요 API
+                // ✅ [추가] 최소 종료시간 계산 endpoint는 공개 (토큰 없이도 OK)
+                .requestMatchers(HttpMethod.GET, "/orders/min-end-time").permitAll()
+
+                // ✅ (기존) 일부는 인증 필요
                 .requestMatchers("/api/auth/me").authenticated()
                 .requestMatchers("/api/auth/change-password").authenticated()
+
                 .requestMatchers("/api/wallet/**").authenticated()
-                .requestMatchers("/orders/**").authenticated()
                 .requestMatchers("/energy-wallet/**").authenticated()
                 .requestMatchers("/api/energy-wallet/**").authenticated()
+
+                // ✅ (기존) 주문 관련은 기본적으로 인증 필요
+                .requestMatchers("/orders/**").authenticated()
+
+                // ✅ (주의) 이건 지금 "permitAll"이라 누구나 충전 가능해짐 (원래 의도 맞는지 체크)
                 .requestMatchers(HttpMethod.POST, "/api/wallet/me/charge").permitAll()
-
-
-
 
                 .anyRequest().authenticated()
             )
@@ -73,20 +78,20 @@ public class SecurityConfig {
         return http.build();
     }
 
-    @Bean   
+    @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
 
-        // 프론트 주소 정확히 일치
+        // 프론트 주소
         config.setAllowedOrigins(List.of("http://localhost:5173"));
 
         // 메서드 허용
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
 
-        // ✅ 핵심: preflight에서 요청하는 헤더가 다양해도 통과
+        // preflight 헤더 허용
         config.setAllowedHeaders(List.of("*"));
 
-        // (선택) 프론트가 읽을 필요가 있는 헤더 노출
+        // 프론트가 읽을 헤더 노출
         config.setExposedHeaders(List.of("Authorization"));
 
         config.setAllowCredentials(true);
