@@ -7,6 +7,11 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Map;
+
 import static org.springframework.http.HttpStatus.UNAUTHORIZED;
 
 @RestController
@@ -24,6 +29,33 @@ public class EnergyOrderController {
         Long userId = extractUserId(auth);
         order.setUserId(userId);
         return ResponseEntity.ok(energyOrderService.createOrder(order));
+    }
+
+    // ✅ [추가] startTime + amountKwh 기준 최소 종료시간 반환
+    // 예) GET /orders/min-end-time?startTime=2026-01-27T21:15:00&amountKwh=50
+    @GetMapping("/min-end-time")
+    public ResponseEntity<?> getMinEndTime(
+            @RequestParam String startTime,
+            @RequestParam BigDecimal amountKwh
+    ) {
+        LocalDateTime st;
+        try {
+            st = LocalDateTime.parse(startTime, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("startTime 형식이 올바르지 않음. 예: 2026-01-27T21:15:00");
+        }
+
+        if (amountKwh == null || amountKwh.signum() <= 0) {
+            return ResponseEntity.badRequest().body("amountKwh는 0보다 커야 함");
+        }
+
+        LocalDateTime minEnd = energyOrderService.getMinEndTime(st, amountKwh);
+
+        return ResponseEntity.ok(Map.of(
+                "startTime", st.toString(),
+                "amountKwh", amountKwh,
+                "minEndTime", minEnd.toString()
+        ));
     }
 
     // ✅ 진행중 주문(완료 제외)만 조회: /orders

@@ -36,13 +36,12 @@ public class EnergyOrderService {
 
     // ---- 정책 파라미터 ----
     private static final double DIST_MAX_KM = 10.0;
-
     private static final int POOL_SIZE = 500;
 
     // ✅ “상위 후보만 잠깐 락” 잡는 수 (A’ 방식)
     private static final int LOCK_TOP_K = 10;
 
-    // ✅ 최소 겹침(분)
+    // ✅ 최소 겹침(분) (매칭 필터)
     private static final int MIN_OVERLAP_MINUTES = 10;
 
     // ✅ SELL은 +10%까지 허용 (sellAmount in [X, 1.1X])
@@ -51,6 +50,13 @@ public class EnergyOrderService {
     // ✅ LocalDateTime comparator 고정
     private static final Comparator<LocalDateTime> CREATED_AT_ASC =
             Comparator.nullsLast(LocalDateTime::compareTo);
+
+    // =========================================================
+    // ✅ [추가] kW=7 기준 최소 endTime 강제(시간 너무 짧은 주문 차단)
+    // =========================================================
+    private static final BigDecimal ASSUMED_POWER_KW = new BigDecimal("7.0"); // 일단 7kW 고정
+    private static final int DELIVERY_BUFFER_MINUTES = 10;                   // 여유 버퍼
+    private static final int TIME_STEP_MINUTES = 5;                          // UI가 5분 단위
 
     public EnergyOrderService(EnergyOrderRepository energyOrderRepository,
                               EnergyTradeRepository energyTradeRepository,
@@ -62,6 +68,13 @@ public class EnergyOrderService {
         this.userWalletRepository = userWalletRepository;
         this.userEnergyWalletRepository = userEnergyWalletRepository;
         this.userRepository = userRepository;
+    }
+
+    // =========================================================
+    // ✅ [추가] Controller/프론트가 "최소 종료시간"을 조회할 수 있게 공개
+    // =========================================================
+    public LocalDateTime getMinEndTime(LocalDateTime startTime, BigDecimal amountKwh) {
+        return calcMinEndTime(startTime, amountKwh);
     }
 
     // ✅ 매칭 엔진 주기 (BUY만 돌림)
@@ -148,6 +161,17 @@ public class EnergyOrderService {
         }
         if (!order.getEndTime().isAfter(LocalDateTime.now())) {
             throw new IllegalArgumentException("endTime은 현재보다 뒤여야 함");
+        }
+
+        // =========================================================
+        // ✅ [추가] kW=7 기준 최소 endTime 강제
+        // =========================================================
+        LocalDateTime minEnd = calcMinEndTime(order.getStartTime(), order.getAmountKwh());
+        if (minEnd != null && order.getEndTime().isBefore(minEnd)) {
+            throw new IllegalArgumentException(
+                    "endTime이 너무 짧음. 최소 종료시간: " + minEnd
+                            + " (기준 " + ASSUMED_POWER_KW + "kW, 버퍼 " + DELIVERY_BUFFER_MINUTES + "분)"
+            );
         }
 
         // ✅ BUY: 가중치 기본 + 정규화 + 현금잠금
@@ -294,7 +318,6 @@ public class EnergyOrderService {
 
         if (topIds.isEmpty()) return null;
 
-        // ✅ 상위K만 락(이미 누가 잡고 있으면 skip)
         List<EnergyOrder> locked = energyOrderRepository.lockActiveOrdersByIdsSkipLocked(topIds);
         if (locked == null || locked.isEmpty()) return null;
 
@@ -351,18 +374,15 @@ public class EnergyOrderService {
         BigDecimal executedAmount = buyOrder.getAmountKwh();
         int executedPrice = sellOrder.getPricePerKwh();
 
-        // ✅ BUY 선점
         int buyOk = energyOrderRepository.updateStatusIfMatch(
                 buyOrder.getId(), "ACTIVE", "MATCHED"
         );
         if (buyOk != 1) return;
 
-        // ✅ SELL 선점
         int sellOk = energyOrderRepository.updateStatusIfMatch(
                 sellOrder.getId(), "ACTIVE", "MATCHED"
         );
         if (sellOk != 1) {
-            // SELL 실패 → BUY 되돌리기
             energyOrderRepository.updateStatusIfMatch(
                     buyOrder.getId(), "MATCHED", "ACTIVE"
             );
@@ -396,6 +416,27 @@ public class EnergyOrderService {
         if (a == null) return b;
         if (b == null) return a;
         return a.isBefore(b) ? a : b;
+    }
+
+    // =========================================================
+    // ✅ 최소 종료시간 계산 (kWh / kW * 60 + buffer, step으로 올림)
+    // =========================================================
+    private LocalDateTime calcMinEndTime(LocalDateTime startTime, BigDecimal amountKwh) {
+        if (startTime == null || amountKwh == null) return null;
+
+        BigDecimal minutes = amountKwh
+                .divide(ASSUMED_POWER_KW, 10, RoundingMode.CEILING)
+                .multiply(new BigDecimal("60"));
+
+        long requiredMin = minutes.setScale(0, RoundingMode.CEILING).longValue();
+        long minTotal = requiredMin + DELIVERY_BUFFER_MINUTES;
+
+        if (TIME_STEP_MINUTES > 1) {
+            long rem = minTotal % TIME_STEP_MINUTES;
+            if (rem != 0) minTotal += (TIME_STEP_MINUTES - rem);
+        }
+
+        return startTime.plusMinutes(minTotal);
     }
 
     // ---------------------------------------
