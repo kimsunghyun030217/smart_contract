@@ -34,6 +34,12 @@ public class EnergyTrade {
     @Column(name = "completed_at")
     private LocalDateTime completedAt;
 
+    @Column(name = "delivery_start")
+    private LocalDateTime deliveryStart;
+
+    @Column(name = "delivery_end")
+    private LocalDateTime deliveryEnd;
+
     public EnergyTrade() {}
 
     public Long getId() { return id; }
@@ -58,4 +64,10 @@ public class EnergyTrade {
 
     public LocalDateTime getCompletedAt() { return completedAt; }
     public void setCompletedAt(LocalDateTime completedAt) { this.completedAt = completedAt; }
+
+    public LocalDateTime getDeliveryStart() { return deliveryStart; }
+    public void setDeliveryStart(LocalDateTime deliveryStart) { this.deliveryStart = deliveryStart; }
+
+    public LocalDateTime getDeliveryEnd() { return deliveryEnd; }
+    public void setDeliveryEnd(LocalDateTime deliveryEnd) { this.deliveryEnd = deliveryEnd; }
 }

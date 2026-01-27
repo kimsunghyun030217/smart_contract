@@ -3,9 +3,11 @@ package com.p2p.energybackend.service;
 import com.p2p.energybackend.model.EnergyOrder;
 import com.p2p.energybackend.model.EnergyTrade;
 import com.p2p.energybackend.model.User;
+import com.p2p.energybackend.model.UserEnergyWallet;
 import com.p2p.energybackend.model.UserWallet;
 import com.p2p.energybackend.repository.EnergyOrderRepository;
 import com.p2p.energybackend.repository.EnergyTradeRepository;
+import com.p2p.energybackend.repository.UserEnergyWalletRepository;
 import com.p2p.energybackend.repository.UserRepository;
 import com.p2p.energybackend.repository.UserWalletRepository;
 import org.springframework.data.domain.PageRequest;
@@ -15,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -26,33 +29,45 @@ public class EnergyOrderService {
     private final EnergyOrderRepository energyOrderRepository;
     private final EnergyTradeRepository energyTradeRepository;
     private final UserWalletRepository userWalletRepository;
+    private final UserEnergyWalletRepository userEnergyWalletRepository;
     private final UserRepository userRepository;
 
     private final AtomicBoolean matchingRunning = new AtomicBoolean(false);
 
+    // ---- 정책 파라미터 ----
     private static final double DIST_MAX_KM = 10.0;
-    private static final int POOL_SIZE = 500;
-    private static final int TOP_N = 100;
 
-    // ✅ LocalDateTime comparator를 명시적으로 고정 (컴파일 에러 해결 핵심)
+    private static final int POOL_SIZE = 500;
+
+    // ✅ “상위 후보만 잠깐 락” 잡는 수 (A’ 방식)
+    private static final int LOCK_TOP_K = 10;
+
+    // ✅ 최소 겹침(분)
+    private static final int MIN_OVERLAP_MINUTES = 10;
+
+    // ✅ SELL은 +10%까지 허용 (sellAmount in [X, 1.1X])
+    private static final BigDecimal SELL_OVERFILL_RATIO = new BigDecimal("1.10");
+
+    // ✅ LocalDateTime comparator 고정
     private static final Comparator<LocalDateTime> CREATED_AT_ASC =
             Comparator.nullsLast(LocalDateTime::compareTo);
 
     public EnergyOrderService(EnergyOrderRepository energyOrderRepository,
                               EnergyTradeRepository energyTradeRepository,
                               UserWalletRepository userWalletRepository,
+                              UserEnergyWalletRepository userEnergyWalletRepository,
                               UserRepository userRepository) {
         this.energyOrderRepository = energyOrderRepository;
         this.energyTradeRepository = energyTradeRepository;
         this.userWalletRepository = userWalletRepository;
+        this.userEnergyWalletRepository = userEnergyWalletRepository;
         this.userRepository = userRepository;
     }
 
-    // ✅ 5초마다 ACTIVE 전체 훑고 매칭 시도
-    @Scheduled(fixedDelay = 5000)
+    // ✅ 매칭 엔진 주기 (BUY만 돌림)
+    @Scheduled(fixedDelay = 10000)
     public void runMatchingEngine() {
         if (!matchingRunning.compareAndSet(false, true)) return;
-
         try {
             runMatchingEngineTx();
         } finally {
@@ -60,10 +75,13 @@ public class EnergyOrderService {
         }
     }
 
+    // ---------------------------------------
+    // (0) 매칭 엔진 루프 + 만료 처리 (BUY만)
+    // ---------------------------------------
     @Transactional
     protected void runMatchingEngineTx() {
-        List<Long> activeIds = energyOrderRepository.findAllActiveOrderIdsForMatching();
-        for (Long id : activeIds) {
+        List<Long> activeBuyIds = energyOrderRepository.findAllActiveBuyOrderIdsForMatching();
+        for (Long id : activeBuyIds) {
             matchOneById(id);
         }
     }
@@ -73,12 +91,37 @@ public class EnergyOrderService {
         if (order == null) return;
 
         if (!"ACTIVE".equalsIgnoreCase(order.getStatus())) return;
-        if (order.getEndTime() == null || !order.getEndTime().isAfter(LocalDateTime.now())) return;
+
+        // ✅ BUY-only 안전장치
+        if (!"buy".equalsIgnoreCase(order.getOrderType())) return;
+
+        // ✅ 만료면 EXPIRED 처리 + 잠금 해제
+        if (order.getEndTime() == null || !order.getEndTime().isAfter(LocalDateTime.now())) {
+            expireOrder(order);
+            return;
+        }
 
         tryMatchOne(order);
     }
 
-    // ✅ 주문 저장 + (BUY면 reserve 잠금) + 저장 직후 매칭 시도
+    @Transactional
+    protected void expireOrder(EnergyOrder order) {
+        if (!"ACTIVE".equalsIgnoreCase(order.getStatus())) return;
+
+        order.setStatus("EXPIRED");
+        energyOrderRepository.save(order);
+
+        // 잠금 해제
+        if ("buy".equalsIgnoreCase(order.getOrderType())) {
+            releaseMoneyForBuyOrder(order);
+        } else if ("sell".equalsIgnoreCase(order.getOrderType())) {
+            releaseEnergyForSellOrder(order);
+        }
+    }
+
+    // ---------------------------------------
+    // (1) 주문 생성: BUY=현금잠금 / SELL=전력잠금
+    // ---------------------------------------
     @Transactional
     public EnergyOrder createOrder(EnergyOrder order) {
 
@@ -97,7 +140,17 @@ public class EnergyOrderService {
         }
         order.setAmountKwh(order.getAmountKwh().setScale(3, RoundingMode.HALF_UP));
 
-        // ✅ BUY일 때만 가중치 세팅 + 정규화
+        if (order.getStartTime() == null || order.getEndTime() == null) {
+            throw new IllegalArgumentException("startTime/endTime 필요");
+        }
+        if (!order.getEndTime().isAfter(order.getStartTime())) {
+            throw new IllegalArgumentException("endTime은 startTime보다 뒤여야 함");
+        }
+        if (!order.getEndTime().isAfter(LocalDateTime.now())) {
+            throw new IllegalArgumentException("endTime은 현재보다 뒤여야 함");
+        }
+
+        // ✅ BUY: 가중치 기본 + 정규화 + 현금잠금
         if ("buy".equalsIgnoreCase(order.getOrderType())) {
             if (order.getWeightPrice() == null) order.setWeightPrice(0.6);
             if (order.getWeightDistance() == null) order.setWeightDistance(0.3);
@@ -113,181 +166,75 @@ public class EnergyOrderService {
             reserveMoneyForBuyOrder(order);
         }
 
+        // ✅ SELL: 전력 잠금
+        if ("sell".equalsIgnoreCase(order.getOrderType())) {
+            reserveEnergyForSellOrder(order);
+        }
+
         EnergyOrder saved = energyOrderRepository.save(order);
 
-        // 저장 직후 매칭 1회 시도
-        tryMatchOne(saved);
+        // ✅ BUY-only: 저장 직후 매칭 1회 시도는 BUY만
+        if ("buy".equalsIgnoreCase(saved.getOrderType())) {
+            tryMatchOne(saved);
+        }
 
         return saved;
     }
 
-    /**
-     * ✅ "단일 결정 로직" 핵심:
-     * - BUY가 들어오면: (이 BUY가) 가장 선호하는 SELL 1개 선택
-     * - SELL이 들어오면: (이 SELL을) 가장 선호하는 BUY 1개 선택
-     * 둘 다 "BUY 가중치 기반 scoreBuyPref()" 하나로만 결정한다.
-     */
+    // ---------------------------------------
+    // (2) 단일 결정 로직 (BUY-only)
+    // ---------------------------------------
     private void tryMatchOne(EnergyOrder triggerOrder) {
         if (!"ACTIVE".equalsIgnoreCase(triggerOrder.getStatus())) return;
 
-        if ("buy".equalsIgnoreCase(triggerOrder.getOrderType())) {
-            // BUY 트리거: buy가 best sell을 고른다
-            User buyer = userRepository.findById(triggerOrder.getUserId()).orElse(null);
-            if (buyer == null) return;
+        // ✅ BUY-only
+        if (!"buy".equalsIgnoreCase(triggerOrder.getOrderType())) return;
 
-            List<EnergyOrder> sellCandidates = buildSellCandidatesForBuy(triggerOrder, buyer);
-            if (sellCandidates.isEmpty()) return;
+        User buyer = userRepository.findById(triggerOrder.getUserId()).orElse(null);
+        if (buyer == null) return;
 
-            EnergyOrder bestSell = pickBestSellForBuy(triggerOrder, buyer, sellCandidates);
-            if (bestSell == null) return;
+        List<EnergyOrder> sellCandidates = buildSellCandidatesForBuy(triggerOrder);
+        if (sellCandidates.isEmpty()) return;
 
-            executeMatch(triggerOrder, bestSell);
-            return;
-        }
+        EnergyOrder bestSell = pickBestSellForBuy_WithTopKLock(triggerOrder, buyer, sellCandidates);
+        if (bestSell == null) return;
 
-        if ("sell".equalsIgnoreCase(triggerOrder.getOrderType())) {
-            // SELL 트리거: 이 sell을 "가장 좋아하는 buy"를 고른다 (BUY 가중치 점수로만)
-            User seller = userRepository.findById(triggerOrder.getUserId()).orElse(null);
-            if (seller == null) return;
-
-            List<EnergyOrder> buyCandidates = buildBuyCandidatesForSell(triggerOrder, seller);
-            if (buyCandidates.isEmpty()) return;
-
-            EnergyOrder bestBuy = pickBestBuyForThisSell(triggerOrder, seller, buyCandidates);
-            if (bestBuy == null) return;
-
-            executeMatch(bestBuy, triggerOrder);
-        }
+        executeMatchWithConditionalUpdates(triggerOrder, bestSell);
     }
 
-    // ------------------ (1) 후보군 구성 ------------------
-
-    /**
-     * BUY 기준 SELL 후보:
-     * pool(500) → 가격Top100 + 거리Top100 + 신뢰Top100 → union(dedup)
-     */
-    private List<EnergyOrder> buildSellCandidatesForBuy(EnergyOrder buyOrder, User buyer) {
+    // ---------------------------------------
+    // (3) 후보군 구성: Repo에서 필터링된 SELL pool
+    // ---------------------------------------
+    private List<EnergyOrder> buildSellCandidatesForBuy(EnergyOrder buyOrder) {
 
         int buyPrice = buyOrder.getPricePerKwh();
-        BigDecimal amount = buyOrder.getAmountKwh();
         Long buyerId = buyOrder.getUserId();
 
-        List<EnergyOrder> pool = energyOrderRepository.findSellCandidatesForBuyLocked(
-                buyPrice, amount, buyerId, PageRequest.of(0, POOL_SIZE)
+        BigDecimal buyAmount = buyOrder.getAmountKwh();
+        BigDecimal minAmount = buyAmount; // X
+        BigDecimal maxAmount = buyAmount.multiply(SELL_OVERFILL_RATIO).setScale(3, RoundingMode.HALF_UP); // X*1.10
+
+        LocalDateTime buyStart = buyOrder.getStartTime();
+        LocalDateTime buyEnd = buyOrder.getEndTime();
+
+        List<EnergyOrder> pool = energyOrderRepository.findSellCandidatesForBuyPool(
+                buyPrice,
+                buyerId,
+                minAmount,
+                maxAmount,
+                buyStart,
+                buyEnd,
+                MIN_OVERLAP_MINUTES,
+                PageRequest.of(0, POOL_SIZE)
         );
-        if (pool.isEmpty()) return List.of();
 
-        Set<Long> sellerIds = pool.stream().map(EnergyOrder::getUserId).collect(Collectors.toSet());
-        Map<Long, User> sellerMap = userRepository.findAllById(sellerIds).stream()
-                .collect(Collectors.toMap(User::getId, u -> u));
-
-        List<EnergyOrder> priceTop = pool.stream()
-                .sorted(Comparator.comparingInt(EnergyOrder::getPricePerKwh)
-                        .thenComparing(EnergyOrder::getCreatedAt, CREATED_AT_ASC))
-                .limit(TOP_N).toList();
-
-        List<EnergyOrder> distTop = pool.stream()
-                .sorted(Comparator.comparingDouble(o -> {
-                    User seller = sellerMap.get(o.getUserId());
-                    if (seller == null) return Double.POSITIVE_INFINITY;
-                    if (buyer.getLatitude() == null || buyer.getLongitude() == null
-                            || seller.getLatitude() == null || seller.getLongitude() == null) {
-                        return Double.POSITIVE_INFINITY;
-                    }
-                    return haversineKm(buyer.getLatitude(), buyer.getLongitude(),
-                            seller.getLatitude(), seller.getLongitude());
-                }))
-                .limit(TOP_N).toList();
-
-        List<EnergyOrder> trustTop = pool.stream()
-                .sorted((a, b) -> {
-                    User ua = sellerMap.get(a.getUserId());
-                    User ub = sellerMap.get(b.getUserId());
-                    int ta = ua != null ? ua.getTrustScore() : -1;
-                    int tb = ub != null ? ub.getTrustScore() : -1;
-                    if (tb != ta) return Integer.compare(tb, ta);
-                    return CREATED_AT_ASC.compare(a.getCreatedAt(), b.getCreatedAt());
-                })
-                .limit(TOP_N).toList();
-
-        LinkedHashMap<Long, EnergyOrder> uniq = new LinkedHashMap<>();
-        for (EnergyOrder o : priceTop) uniq.put(o.getId(), o);
-        for (EnergyOrder o : distTop)  uniq.put(o.getId(), o);
-        for (EnergyOrder o : trustTop) uniq.put(o.getId(), o);
-
-        return new ArrayList<>(uniq.values());
+        if (pool == null || pool.isEmpty()) return List.of();
+        return pool;
     }
 
-    /**
-     * SELL 기준 BUY 후보:
-     * pool(500) → 가격Top100 + 거리Top100 + 구매자신뢰Top100 + 오래된Top100 → union(dedup)
-     * (여기서도 "결정"은 scoreBuyPref()로만 한다)
-     */
-    private List<EnergyOrder> buildBuyCandidatesForSell(EnergyOrder sellOrder, User seller) {
-
-        int sellPrice = sellOrder.getPricePerKwh();
-        BigDecimal amount = sellOrder.getAmountKwh();
-        Long sellerId = sellOrder.getUserId();
-
-        List<EnergyOrder> pool = energyOrderRepository.findBuyCandidatesForSellLocked(
-                sellPrice, amount, sellerId, PageRequest.of(0, POOL_SIZE)
-        );
-        if (pool.isEmpty()) return List.of();
-
-        Set<Long> buyerIds = pool.stream().map(EnergyOrder::getUserId).collect(Collectors.toSet());
-        Map<Long, User> buyerMap = userRepository.findAllById(buyerIds).stream()
-                .collect(Collectors.toMap(User::getId, u -> u));
-
-        List<EnergyOrder> priceTop = pool.stream()
-                .sorted(Comparator.comparingInt(EnergyOrder::getPricePerKwh).reversed()
-                        .thenComparing(EnergyOrder::getCreatedAt, CREATED_AT_ASC))
-                .limit(TOP_N).toList();
-
-        List<EnergyOrder> distTop = pool.stream()
-                .sorted(Comparator.comparingDouble(o -> {
-                    User buyer = buyerMap.get(o.getUserId());
-                    if (buyer == null) return Double.POSITIVE_INFINITY;
-                    if (buyer.getLatitude() == null || buyer.getLongitude() == null
-                            || seller.getLatitude() == null || seller.getLongitude() == null) {
-                        return Double.POSITIVE_INFINITY;
-                    }
-                    return haversineKm(buyer.getLatitude(), buyer.getLongitude(),
-                            seller.getLatitude(), seller.getLongitude());
-                }))
-                .limit(TOP_N).toList();
-
-        List<EnergyOrder> trustTop = pool.stream()
-                .sorted((a, b) -> {
-                    User ua = buyerMap.get(a.getUserId());
-                    User ub = buyerMap.get(b.getUserId());
-                    int ta = ua != null ? ua.getTrustScore() : -1;
-                    int tb = ub != null ? ub.getTrustScore() : -1;
-                    if (tb != ta) return Integer.compare(tb, ta);
-                    return CREATED_AT_ASC.compare(a.getCreatedAt(), b.getCreatedAt());
-                })
-                .limit(TOP_N).toList();
-
-        List<EnergyOrder> oldestTop = pool.stream()
-                .sorted(Comparator.comparing(EnergyOrder::getCreatedAt, CREATED_AT_ASC))
-                .limit(TOP_N).toList();
-
-        LinkedHashMap<Long, EnergyOrder> uniq = new LinkedHashMap<>();
-        for (EnergyOrder o : priceTop)  uniq.put(o.getId(), o);
-        for (EnergyOrder o : distTop)   uniq.put(o.getId(), o);
-        for (EnergyOrder o : trustTop)  uniq.put(o.getId(), o);
-        for (EnergyOrder o : oldestTop) uniq.put(o.getId(), o);
-
-        return new ArrayList<>(uniq.values());
-    }
-
-    // ------------------ (2) 단일 점수 함수 + 선택 ------------------
-
-    /**
-     * ✅ 단일 점수 함수: "BUY 가중치"로 (buy, sell) 쌍의 점수를 계산
-     * - priceScore: (buyPrice - sellPrice) slack이 클수록 좋음
-     * - distScore : buyer-seller 가까울수록 좋음
-     * - trustScore: seller trust 높을수록 좋음
-     */
+    // ---------------------------------------
+    // (4) 점수/선택 + “상위K만 잠깐 락”
+    // ---------------------------------------
     private double scoreBuyPref(EnergyOrder buy, User buyer, EnergyOrder sell, User seller,
                                 int minSlack, int maxSlack) {
 
@@ -300,7 +247,7 @@ public class EnergyOrderService {
             wP /= sum; wD /= sum; wT /= sum;
         }
 
-        int slack = buy.getPricePerKwh() - sell.getPricePerKwh(); // 교차 조건 만족하면 >=0
+        int slack = buy.getPricePerKwh() - sell.getPricePerKwh(); // >=0
         double priceScore = normalizeHigherIsBetter(slack, minSlack, maxSlack);
 
         double distScore = distanceScoreKm(
@@ -314,19 +261,15 @@ public class EnergyOrderService {
         return wP * priceScore + wD * distScore + wT * trustScore;
     }
 
-    /**
-     * BUY 트리거: 후보 SELL 중에서 scoreBuyPref 최대인 SELL 선택
-     */
-    private EnergyOrder pickBestSellForBuy(EnergyOrder buy, User buyer, List<EnergyOrder> sells) {
-
-        // slack 정규화 범위 계산 (buyPrice - sellPrice)
-        int minSlack = Integer.MAX_VALUE;
-        int maxSlack = Integer.MIN_VALUE;
+    private EnergyOrder pickBestSellForBuy_WithTopKLock(EnergyOrder buy, User buyer, List<EnergyOrder> sells) {
+        if (sells.isEmpty()) return null;
 
         Set<Long> sellerIds = sells.stream().map(EnergyOrder::getUserId).collect(Collectors.toSet());
         Map<Long, User> sellerMap = userRepository.findAllById(sellerIds).stream()
                 .collect(Collectors.toMap(User::getId, u -> u));
 
+        int minSlack = Integer.MAX_VALUE;
+        int maxSlack = Integer.MIN_VALUE;
         for (EnergyOrder sell : sells) {
             int slack = buy.getPricePerKwh() - sell.getPricePerKwh();
             minSlack = Math.min(minSlack, slack);
@@ -335,10 +278,30 @@ public class EnergyOrderService {
         if (minSlack == Integer.MAX_VALUE) minSlack = 0;
         if (maxSlack == Integer.MIN_VALUE) maxSlack = 0;
 
-        double bestScore = -1;
-        EnergyOrder best = null;
-
+        List<ScoredOrder> ranked = new ArrayList<>();
         for (EnergyOrder sell : sells) {
+            User seller = sellerMap.get(sell.getUserId());
+            if (seller == null) continue;
+            double score = scoreBuyPref(buy, buyer, sell, seller, minSlack, maxSlack);
+            ranked.add(new ScoredOrder(sell.getId(), score));
+        }
+
+        ranked.sort((a, b) -> Double.compare(b.score, a.score));
+        List<Long> topIds = ranked.stream()
+                .limit(LOCK_TOP_K)
+                .map(x -> x.orderId)
+                .toList();
+
+        if (topIds.isEmpty()) return null;
+
+        // ✅ 상위K만 락(이미 누가 잡고 있으면 skip)
+        List<EnergyOrder> locked = energyOrderRepository.lockActiveOrdersByIdsSkipLocked(topIds);
+        if (locked == null || locked.isEmpty()) return null;
+
+        EnergyOrder best = null;
+        double bestScore = -1;
+
+        for (EnergyOrder sell : locked) {
             User seller = sellerMap.get(sell.getUserId());
             if (seller == null) continue;
 
@@ -348,95 +311,96 @@ public class EnergyOrderService {
                 bestScore = score;
                 best = sell;
             } else if (Math.abs(score - bestScore) <= 1e-9 && best != null) {
-                // tie-break: 더 싼 가격 → 더 빠른 생성
                 if (sell.getPricePerKwh() < best.getPricePerKwh()) best = sell;
-                else if (sell.getPricePerKwh() == best.getPricePerKwh()
+                else if (sell.getPricePerKwh().equals(best.getPricePerKwh())
                         && sell.getCreatedAt() != null && best.getCreatedAt() != null
                         && sell.getCreatedAt().isBefore(best.getCreatedAt())) {
                     best = sell;
                 }
             }
         }
+
         return best;
     }
 
-    /**
-     * SELL 트리거: 후보 BUY 중에서 (각 BUY의 가중치로) "이 SELL" 점수가 최대인 BUY 선택
-     * ✅ 여기서도 점수 함수는 scoreBuyPref 하나뿐이다.
-     */
-    private EnergyOrder pickBestBuyForThisSell(EnergyOrder sell, User seller, List<EnergyOrder> buys) {
-
-        Set<Long> buyerIds = buys.stream().map(EnergyOrder::getUserId).collect(Collectors.toSet());
-        Map<Long, User> buyerMap = userRepository.findAllById(buyerIds).stream()
-                .collect(Collectors.toMap(User::getId, u -> u));
-
-        // slack 범위(min/max)는 후보 BUY들 기준으로 계산
-        int minSlack = Integer.MAX_VALUE;
-        int maxSlack = Integer.MIN_VALUE;
-        for (EnergyOrder buy : buys) {
-            int slack = buy.getPricePerKwh() - sell.getPricePerKwh();
-            minSlack = Math.min(minSlack, slack);
-            maxSlack = Math.max(maxSlack, slack);
+    private static class ScoredOrder {
+        final Long orderId;
+        final double score;
+        ScoredOrder(Long orderId, double score) {
+            this.orderId = orderId;
+            this.score = score;
         }
-        if (minSlack == Integer.MAX_VALUE) minSlack = 0;
-        if (maxSlack == Integer.MIN_VALUE) maxSlack = 0;
-
-        double bestScore = -1;
-        EnergyOrder best = null;
-
-        for (EnergyOrder buy : buys) {
-            User buyer = buyerMap.get(buy.getUserId());
-            if (buyer == null) continue;
-
-            double score = scoreBuyPref(buy, buyer, sell, seller, minSlack, maxSlack);
-
-            if (score > bestScore + 1e-9) {
-                bestScore = score;
-                best = buy;
-            } else if (Math.abs(score - bestScore) <= 1e-9 && best != null) {
-                // tie-break: 더 오래 기다린 BUY 우선(공정성)
-                if (buy.getCreatedAt() != null && best.getCreatedAt() != null
-                        && buy.getCreatedAt().isBefore(best.getCreatedAt())) {
-                    best = buy;
-                }
-            }
-        }
-        return best;
     }
 
-    // ------------------ (3) 매칭 실행(공통) ------------------
-
-    /**
-     * ✅ 매칭 실행은 무조건 이 함수 하나로만 한다. (중복 제거)
-     * - 체결가: SELL 가격
-     * - trade 생성
-     * - buyer 잠금 차액 해제
-     */
-    private void executeMatch(EnergyOrder buyOrder, EnergyOrder sellOrder) {
+    // ---------------------------------------
+    // (5) 매칭 실행: “조건부 UPDATE로 선점” + trade 생성 + 잠금 정산
+    // ---------------------------------------
+    @Transactional
+    protected void executeMatchWithConditionalUpdates(EnergyOrder buyOrder, EnergyOrder sellOrder) {
 
         if (!"ACTIVE".equalsIgnoreCase(buyOrder.getStatus())) return;
         if (!"ACTIVE".equalsIgnoreCase(sellOrder.getStatus())) return;
 
-        buyOrder.setStatus("MATCHED");
-        sellOrder.setStatus("MATCHED");
-        energyOrderRepository.save(buyOrder);
-        energyOrderRepository.save(sellOrder);
+        LocalDateTime deliveryStart = maxTime(buyOrder.getStartTime(), sellOrder.getStartTime());
+        LocalDateTime deliveryEnd = minTime(buyOrder.getEndTime(), sellOrder.getEndTime());
+        if (deliveryStart == null || deliveryEnd == null) return;
 
+        long overlapMin = Duration.between(deliveryStart, deliveryEnd).toMinutes();
+        if (overlapMin < MIN_OVERLAP_MINUTES) return;
+
+        BigDecimal executedAmount = buyOrder.getAmountKwh();
         int executedPrice = sellOrder.getPricePerKwh();
+
+        // ✅ BUY 선점
+        int buyOk = energyOrderRepository.updateStatusIfMatch(
+                buyOrder.getId(), "ACTIVE", "MATCHED"
+        );
+        if (buyOk != 1) return;
+
+        // ✅ SELL 선점
+        int sellOk = energyOrderRepository.updateStatusIfMatch(
+                sellOrder.getId(), "ACTIVE", "MATCHED"
+        );
+        if (sellOk != 1) {
+            // SELL 실패 → BUY 되돌리기
+            energyOrderRepository.updateStatusIfMatch(
+                    buyOrder.getId(), "MATCHED", "ACTIVE"
+            );
+            return;
+        }
 
         EnergyTrade trade = new EnergyTrade();
         trade.setBuyOrderId(buyOrder.getId());
         trade.setSellOrderId(sellOrder.getId());
         trade.setPricePerKwh(executedPrice);
-        trade.setAmountKwh(buyOrder.getAmountKwh()); // 수량 동일 전제
+        trade.setAmountKwh(executedAmount);
         trade.setStatus("MATCHED");
+        trade.setDeliveryStart(deliveryStart);
+        trade.setDeliveryEnd(deliveryEnd);
         energyTradeRepository.save(trade);
 
-        unlockBuyerExtraLock(buyOrder, executedPrice);
+        unlockBuyerExtraLock(buyOrder, executedPrice, executedAmount);
+        unlockSellerExtraEnergy(sellOrder, executedAmount);
+
+        buyOrder.setStatus("MATCHED");
+        sellOrder.setStatus("MATCHED");
     }
 
-    // ------------------ 점수/거리 헬퍼 ------------------
+    private LocalDateTime maxTime(LocalDateTime a, LocalDateTime b) {
+        if (a == null) return b;
+        if (b == null) return a;
+        return a.isAfter(b) ? a : b;
+    }
 
+    private LocalDateTime minTime(LocalDateTime a, LocalDateTime b) {
+        if (a == null) return b;
+        if (b == null) return a;
+        return a.isBefore(b) ? a : b;
+    }
+
+    // ---------------------------------------
+    // 거리/정규화 헬퍼
+    // ---------------------------------------
     private double normalizeHigherIsBetter(int value, int min, int max) {
         if (max <= min) return 1.0;
         return (double) (value - min) / (double) (max - min);
@@ -451,7 +415,6 @@ public class EnergyOrderService {
 
     private double distanceScoreKm(Double lat1, Double lon1, Double lat2, Double lon2, double dMaxKm) {
         if (lat1 == null || lon1 == null || lat2 == null || lon2 == null) return 0.0;
-
         double dist = haversineKm(lat1, lon1, lat2, lon2);
         double clipped = Math.min(dist, dMaxKm);
         return 1.0 - (clipped / dMaxKm);
@@ -470,8 +433,9 @@ public class EnergyOrderService {
         return R * c;
     }
 
-    // ------------------ 지갑/잠금 로직 ------------------
-
+    // ---------------------------------------
+    // 지갑/잠금 로직 (BUY: 돈 / SELL: 전력)
+    // ---------------------------------------
     private void reserveMoneyForBuyOrder(EnergyOrder order) {
         Long buyerId = order.getUserId();
         BigDecimal need = calcNeedMoneyByPrice(order.getPricePerKwh(), order.getAmountKwh());
@@ -502,18 +466,11 @@ public class EnergyOrderService {
         userWalletRepository.save(wallet);
     }
 
-    private void unlockBuyerExtraLock(EnergyOrder buyOrder, int executedPricePerKwh) {
+    private void unlockBuyerExtraLock(EnergyOrder buyOrder, int executedPricePerKwh, BigDecimal executedAmount) {
         Long buyerId = buyOrder.getUserId();
 
-        BigDecimal lockedByBuyPrice = calcNeedMoneyByPrice(
-                buyOrder.getPricePerKwh(),
-                buyOrder.getAmountKwh()
-        );
-
-        BigDecimal executedNeed = calcNeedMoneyByPrice(
-                executedPricePerKwh,
-                buyOrder.getAmountKwh()
-        );
+        BigDecimal lockedByBuyPrice = calcNeedMoneyByPrice(buyOrder.getPricePerKwh(), executedAmount);
+        BigDecimal executedNeed = calcNeedMoneyByPrice(executedPricePerKwh, executedAmount);
 
         BigDecimal extra = lockedByBuyPrice.subtract(executedNeed);
         if (extra.signum() <= 0) return;
@@ -528,13 +485,60 @@ public class EnergyOrderService {
         userWalletRepository.save(wallet);
     }
 
+    private void reserveEnergyForSellOrder(EnergyOrder order) {
+        Long sellerId = order.getUserId();
+        BigDecimal needKwh = order.getAmountKwh();
+
+        UserEnergyWallet w = userEnergyWalletRepository.findByUserIdLocked(sellerId)
+                .orElseGet(() -> userEnergyWalletRepository.save(new UserEnergyWallet(sellerId)));
+
+        BigDecimal available = w.getTotalKwh().subtract(w.getLockedKwh());
+        if (available.compareTo(needKwh) < 0) {
+            throw new IllegalStateException("전력 부족: 필요 " + needKwh + "kWh, 사용가능 " + available + "kWh");
+        }
+
+        w.setLockedKwh(w.getLockedKwh().add(needKwh));
+        userEnergyWalletRepository.save(w);
+    }
+
+    private void releaseEnergyForSellOrder(EnergyOrder order) {
+        Long sellerId = order.getUserId();
+        BigDecimal needKwh = order.getAmountKwh();
+
+        UserEnergyWallet w = userEnergyWalletRepository.findByUserIdLocked(sellerId)
+                .orElseThrow(() -> new IllegalStateException("에너지 지갑이 없음"));
+
+        BigDecimal nextLocked = w.getLockedKwh().subtract(needKwh);
+        if (nextLocked.signum() < 0) nextLocked = BigDecimal.ZERO;
+
+        w.setLockedKwh(nextLocked);
+        userEnergyWalletRepository.save(w);
+    }
+
+    private void unlockSellerExtraEnergy(EnergyOrder sellOrder, BigDecimal executedAmount) {
+        BigDecimal sellAmount = sellOrder.getAmountKwh();
+        BigDecimal extra = sellAmount.subtract(executedAmount);
+        if (extra.signum() <= 0) return;
+
+        Long sellerId = sellOrder.getUserId();
+        UserEnergyWallet w = userEnergyWalletRepository.findByUserIdLocked(sellerId)
+                .orElseThrow(() -> new IllegalStateException("에너지 지갑이 없음"));
+
+        BigDecimal nextLocked = w.getLockedKwh().subtract(extra);
+        if (nextLocked.signum() < 0) nextLocked = BigDecimal.ZERO;
+
+        w.setLockedKwh(nextLocked);
+        userEnergyWalletRepository.save(w);
+    }
+
     private BigDecimal calcNeedMoneyByPrice(int pricePerKwh, BigDecimal amountKwh) {
         BigDecimal p = BigDecimal.valueOf(pricePerKwh);
         return p.multiply(amountKwh).setScale(2, RoundingMode.HALF_UP);
     }
 
-    // ------------------ 컨트롤러용 ------------------
-
+    // ---------------------------------------
+    // 컨트롤러용
+    // ---------------------------------------
     public List<EnergyOrder> getMyOrdersInProgress(Long userId) {
         return energyOrderRepository.findByUserIdAndStatusNotOrderByCreatedAtDesc(userId, "COMPLETED");
     }
@@ -558,6 +562,8 @@ public class EnergyOrderService {
 
         if ("buy".equalsIgnoreCase(order.getOrderType())) {
             releaseMoneyForBuyOrder(order);
+        } else if ("sell".equalsIgnoreCase(order.getOrderType())) {
+            releaseEnergyForSellOrder(order);
         }
 
         energyOrderRepository.deleteById(orderId);
