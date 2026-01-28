@@ -33,7 +33,7 @@ export default function OrdersPage() {
     }
   }
 
-  // ✅ 주문 취소(삭제): ACTIVE만 가능
+  // ✅ 주문 취소(삭제): ACTIVE / EXPIRED 가능
   const cancelOrder = async (id) => {
     if (!confirm("이 주문을 취소(삭제)할까요?")) return;
 
@@ -50,7 +50,7 @@ export default function OrdersPage() {
       const text = await res.text();
       if (!res.ok) throw new Error(text || "취소 실패");
 
-      // ✅ 화면에서도 바로 제거 (또는 load()로 새로고침해도 됨)
+      // ✅ 화면에서도 바로 제거
       setOrders((prev) => prev.filter((o) => o.id !== id));
     } catch (e) {
       alert(e.message || "취소 실패");
@@ -62,7 +62,7 @@ export default function OrdersPage() {
     load();
 
     const timer = setInterval(() => {
-      load({ silent: true }); // 로딩 스피너 없이 조용히 갱신
+      load({ silent: true });
     }, 30_000);
 
     return () => clearInterval(timer);
@@ -110,9 +110,9 @@ export default function OrdersPage() {
     const map = {
       ACTIVE: { label: "대기", bg: "rgba(16,185,129,0.10)", color: "#059669" },
       MATCHED: { label: "체결", bg: "rgba(59,130,246,0.10)", color: "#2563eb" },
-      RUNNING: { label: "진행중", bg: "rgba(245,158,11,0.12)", color: "#b45309" }, // ✅ 추가
+      RUNNING: { label: "진행중", bg: "rgba(245,158,11,0.12)", color: "#b45309" },
       COMPLETED: { label: "완료", bg: "rgba(139,92,246,0.10)", color: "#7c3aed" },
-      EXPIRED: { label: "만료", bg: "rgba(148,163,184,0.12)", color: "#64748b" },
+      EXPIRED: { label: "기간 종료", bg: "rgba(148,163,184,0.12)", color: "#64748b" },
     };
 
     const meta =
@@ -137,7 +137,11 @@ export default function OrdersPage() {
     );
   };
 
-  const isActive = (o) => String(o.status || "").toUpperCase() === "ACTIVE";
+  // ✅ 취소(삭제) 가능 상태: ACTIVE / EXPIRED
+  const isCancelable = (o) => {
+    const s = String(o.status || "").toUpperCase();
+    return s === "ACTIVE" || s === "EXPIRED";
+  };
 
   return (
     <Layout>
@@ -146,7 +150,6 @@ export default function OrdersPage() {
           <h1 style={styles.headerTitle}>주문내역 🧾</h1>
           <p style={styles.headerSubtitle}>내가 등록한 거래 주문을 확인할 수 있어요</p>
 
-          {/* ✅ 30초 자동 갱신 안내(선택) */}
           <div style={{ marginTop: 8, color: "#94a3b8", fontSize: 12, fontWeight: 700 }}>
             * 30초마다 자동으로 상태가 갱신돼요.
           </div>
@@ -213,15 +216,15 @@ export default function OrdersPage() {
                       <td style={styles.td}>
                         <button
                           onClick={() => cancelOrder(o.id)}
-                          disabled={!isActive(o)}
+                          disabled={!isCancelable(o)}
                           style={{
                             padding: "8px 10px",
                             borderRadius: 10,
                             border: "2px solid #e2e8f0",
                             background: "white",
                             fontWeight: 900,
-                            cursor: isActive(o) ? "pointer" : "not-allowed",
-                            opacity: isActive(o) ? 1 : 0.35,
+                            cursor: isCancelable(o) ? "pointer" : "not-allowed",
+                            opacity: isCancelable(o) ? 1 : 0.35,
                           }}
                         >
                           취소
@@ -233,7 +236,7 @@ export default function OrdersPage() {
               </table>
 
               <div style={{ marginTop: 10, color: "#94a3b8", fontSize: 12 }}>
-                * “취소”는 대기(ACTIVE) 상태에서만 가능해요.
+                * “취소”는 대기(ACTIVE) 또는 기간 종료(EXPIRED) 상태에서 가능해요.
               </div>
             </div>
           )}
@@ -312,7 +315,9 @@ const styles = {
     letterSpacing: "0.4px",
     whiteSpace: "nowrap",
   },
-  tr: { borderBottom: "1px solid #f1f5f9" },
+  tr: { borderBottom: "1px solid #f1d5aaf3-dfd4-4ad1-b446-25f439e95519.png5f9" }, // (오타 방지용) 아래 줄로 교체 권장
+  // tr: { borderBottom: "1px solid #f1f5f9" },
+
   td: {
     padding: "12px 10px",
     fontSize: 14,

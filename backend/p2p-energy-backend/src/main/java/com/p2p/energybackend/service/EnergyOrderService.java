@@ -588,6 +588,7 @@ public class EnergyOrderService {
         return energyOrderRepository.findByUserIdAndStatusOrderByCreatedAtDesc(userId, "COMPLETED");
     }
 
+    // ✅ 여기만 핵심 변경됨: ACTIVE/EXPIRED 삭제 허용
     @Transactional
     public void cancelOrder(Long userId, Long orderId) {
         EnergyOrder order = energyOrderRepository.findById(orderId)
@@ -597,10 +598,14 @@ public class EnergyOrderService {
             throw new SecurityException("권한 없음");
         }
 
-        if (!"ACTIVE".equalsIgnoreCase(order.getStatus())) {
-            throw new IllegalStateException("대기(ACTIVE) 상태만 취소 가능");
+        String status = (order.getStatus() == null) ? "" : order.getStatus().toUpperCase();
+
+        // ✅ ACTIVE / EXPIRED 만 취소(삭제) 가능
+        if (!(status.equals("ACTIVE") || status.equals("EXPIRED"))) {
+            throw new IllegalStateException("대기(ACTIVE) 또는 기간 종료(EXPIRED) 상태만 취소 가능");
         }
 
+        // ✅ 안전하게 잠금 해제(이미 풀렸어도 0 바닥 처리라 터지진 않음)
         if ("buy".equalsIgnoreCase(order.getOrderType())) {
             releaseMoneyForBuyOrder(order);
         } else if ("sell".equalsIgnoreCase(order.getOrderType())) {

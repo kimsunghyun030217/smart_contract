@@ -61,40 +61,6 @@ public interface EnergyOrderRepository extends JpaRepository<EnergyOrder, Long> 
             Pageable pageable
     );
 
-    /**
-     * ✅ (옵션) SELL 기준 BUY 후보 Pool (BUY-only면 실제로는 미사용이어도 됨)
-     */
-    @Query(value = """
-        SELECT *
-        FROM energy_orders o
-        WHERE o.order_type = 'buy'
-          AND o.status = 'ACTIVE'
-          AND o.price_per_kwh >= :sellPrice
-          AND o.user_id <> :sellerId
-          AND o.end_time > NOW()
-          AND o.amount_kwh BETWEEN :minAmount AND :maxAmount
-
-          AND o.start_time < :sellEnd
-          AND o.end_time > :sellStart
-
-          AND TIMESTAMPDIFF(MINUTE,
-                GREATEST(o.start_time, :sellStart),
-                LEAST(o.end_time, :sellEnd)
-              ) >= :minOverlapMinutes
-
-        ORDER BY o.created_at ASC
-        """, nativeQuery = true)
-    List<EnergyOrder> findBuyCandidatesForSellPool(
-            @Param("sellPrice") int sellPrice,
-            @Param("sellerId") Long sellerId,
-            @Param("minAmount") BigDecimal minAmount,
-            @Param("maxAmount") BigDecimal maxAmount,
-            @Param("sellStart") LocalDateTime sellStart,
-            @Param("sellEnd") LocalDateTime sellEnd,
-            @Param("minOverlapMinutes") int minOverlapMinutes,
-            Pageable pageable
-    );
-
     // =========================================================
     // ✅ A’(락 최소화)용: “상위 후보만 잠깐 락” + “조건부 상태 변경”
     // =========================================================
@@ -130,4 +96,14 @@ public interface EnergyOrderRepository extends JpaRepository<EnergyOrder, Long> 
            AND o.status = 'MATCHED'
     """)
     int moveMatchedOrdersToRunning(@Param("ids") List<Long> ids);
+
+    // ✅ 만료 처리: endTime 지난 ACTIVE 주문 -> EXPIRED
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+        update EnergyOrder o
+           set o.status = 'EXPIRED'
+         where o.status = 'ACTIVE'
+           and o.endTime <= :now
+    """)
+    int expireActiveOrders(@Param("now") LocalDateTime now);
 }
