@@ -32,53 +32,55 @@ public class EnergyOrderService {
     private final UserEnergyWalletRepository userEnergyWalletRepository;
     private final UserRepository userRepository;
 
+    // ✅ 로그 서비스
+    private final EnergyEventLogService eventLogService;
+
+    // ✅ 스케줄러 중복 실행 방지 (매칭만)
     private final AtomicBoolean matchingRunning = new AtomicBoolean(false);
 
     // ---- 정책 파라미터 ----
     private static final double DIST_MAX_KM = 10.0;
     private static final int POOL_SIZE = 500;
 
-    // ✅ “상위 후보만 잠깐 락” 잡는 수 (A’ 방식)
+    // ✅ “상위 후보만 잠깐 락”
     private static final int LOCK_TOP_K = 10;
 
-    // ✅ 최소 겹침(분) (매칭 필터)
+    // ✅ (안전망) 너무 작은 값 방지용 최소 겹침(분)
     private static final int MIN_OVERLAP_MINUTES = 10;
 
-    // ✅ SELL은 +10%까지 허용 (sellAmount in [X, 1.1X])
+    // ✅ SELL은 +10%까지 허용
     private static final BigDecimal SELL_OVERFILL_RATIO = new BigDecimal("1.10");
 
-    // ✅ LocalDateTime comparator 고정
-    private static final Comparator<LocalDateTime> CREATED_AT_ASC =
-            Comparator.nullsLast(LocalDateTime::compareTo);
-
     // =========================================================
-    // ✅ [추가] kW=7 기준 최소 endTime 강제(시간 너무 짧은 주문 차단)
+    // ✅ kW=7 기준 최소 endTime/overlap 강제
     // =========================================================
-    private static final BigDecimal ASSUMED_POWER_KW = new BigDecimal("7.0"); // 일단 7kW 고정
-    private static final int DELIVERY_BUFFER_MINUTES = 10;                   // 여유 버퍼
-    private static final int TIME_STEP_MINUTES = 5;                          // UI가 5분 단위
+    private static final BigDecimal ASSUMED_POWER_KW = new BigDecimal("7.0");
+    private static final int DELIVERY_BUFFER_MINUTES = 10;
+    private static final int TIME_STEP_MINUTES = 5;
 
     public EnergyOrderService(EnergyOrderRepository energyOrderRepository,
                               EnergyTradeRepository energyTradeRepository,
                               UserWalletRepository userWalletRepository,
                               UserEnergyWalletRepository userEnergyWalletRepository,
-                              UserRepository userRepository) {
+                              UserRepository userRepository,
+                              EnergyEventLogService eventLogService) {
         this.energyOrderRepository = energyOrderRepository;
         this.energyTradeRepository = energyTradeRepository;
         this.userWalletRepository = userWalletRepository;
         this.userEnergyWalletRepository = userEnergyWalletRepository;
         this.userRepository = userRepository;
+        this.eventLogService = eventLogService;
     }
 
-    // =========================================================
-    // ✅ [추가] Controller/프론트가 "최소 종료시간"을 조회할 수 있게 공개
-    // =========================================================
+    // ✅ 프론트/컨트롤러용: 최소 종료시간
     public LocalDateTime getMinEndTime(LocalDateTime startTime, BigDecimal amountKwh) {
         return calcMinEndTime(startTime, amountKwh);
     }
 
-    // ✅ 매칭 엔진 주기 (BUY만 돌림)
-    @Scheduled(fixedDelay = 10000)
+    // =========================================================
+    // ✅ 1) 매칭 엔진 (BUY만) - "만료 처리 안함"
+    // =========================================================
+    @Scheduled(fixedDelay = 10_000)
     public void runMatchingEngine() {
         if (!matchingRunning.compareAndSet(false, true)) return;
         try {
@@ -88,12 +90,9 @@ public class EnergyOrderService {
         }
     }
 
-    // ---------------------------------------
-    // (0) 매칭 엔진 루프 + 만료 처리 (BUY만)
-    // ---------------------------------------
     @Transactional
     protected void runMatchingEngineTx() {
-        List<Long> activeBuyIds = energyOrderRepository.findAllActiveBuyOrderIdsForMatching();
+        List<Long> activeBuyIds = energyOrderRepository.findAllActiveBuyOrderIdsForMatching(LocalDateTime.now());
         for (Long id : activeBuyIds) {
             matchOneById(id);
         }
@@ -104,36 +103,69 @@ public class EnergyOrderService {
         if (order == null) return;
 
         if (!"ACTIVE".equalsIgnoreCase(order.getStatus())) return;
-
-        // ✅ BUY-only 안전장치
         if (!"buy".equalsIgnoreCase(order.getOrderType())) return;
 
-        // ✅ 만료면 EXPIRED 처리 + 잠금 해제
+        // ✅ endTime 지난 주문은 매칭하지 않음 (만료는 OrderExpiryScheduler가 처리)
         if (order.getEndTime() == null || !order.getEndTime().isAfter(LocalDateTime.now())) {
-            expireOrder(order);
             return;
         }
 
         tryMatchOne(order);
     }
 
+    // =========================================================
+    // ✅ 2) 만료 처리 (스케줄러가 호출)
+    // - OrderExpiryScheduler가 대상 주문(snapshot)을 가져오고
+    // - 여기 메서드를 호출해서 expireOne을 실행
+    // =========================================================
     @Transactional
-    protected void expireOrder(EnergyOrder order) {
-        if (!"ACTIVE".equalsIgnoreCase(order.getStatus())) return;
+    public void expireOrderByScheduler(EnergyOrder orderSnapshot, LocalDateTime now) {
+        expireOne(orderSnapshot, now);
+    }
 
-        order.setStatus("EXPIRED");
-        energyOrderRepository.save(order);
+    /**
+     * ✅ 핵심: 상태를 "조건부 업데이트(선점)"로 바꾼 경우에만
+     * - 잠금 해제
+     * - ORDER_EXPIRED 로그 기록
+     */
+    private void expireOne(EnergyOrder orderSnapshot, LocalDateTime now) {
+        if (orderSnapshot == null) return;
 
-        // 잠금 해제
-        if ("buy".equalsIgnoreCase(order.getOrderType())) {
-            releaseMoneyForBuyOrder(order);
-        } else if ("sell".equalsIgnoreCase(order.getOrderType())) {
-            releaseEnergyForSellOrder(order);
+        // ✅ 이미 MATCHED 등으로 바뀌었으면 0이 나와서 스킵
+        int ok = energyOrderRepository.updateStatusIfMatch(
+                orderSnapshot.getId(), "ACTIVE", "EXPIRED"
+        );
+        if (ok != 1) return;
+
+        // ✅ 잠금 해제
+        if ("buy".equalsIgnoreCase(orderSnapshot.getOrderType())) {
+            releaseMoneyForBuyOrder(orderSnapshot);
+        } else if ("sell".equalsIgnoreCase(orderSnapshot.getOrderType())) {
+            releaseEnergyForSellOrder(orderSnapshot);
         }
+
+        // ✅ 로그: ORDER_EXPIRED
+        int requiredOverlapMin = calcRequiredOverlapMinutes(orderSnapshot.getAmountKwh());
+
+        eventLogService.log(
+                orderSnapshot.getUserId(),
+                "ORDER",
+                orderSnapshot.getId(),
+                "ORDER_EXPIRED",
+                Map.of(
+                        "orderType", orderSnapshot.getOrderType(),
+                        "pricePerKwh", orderSnapshot.getPricePerKwh(),
+                        "amountKwh", orderSnapshot.getAmountKwh(),
+                        "startTime", String.valueOf(orderSnapshot.getStartTime()),
+                        "endTime", String.valueOf(orderSnapshot.getEndTime()),
+                        "expiredAt", String.valueOf(now),
+                        "requiredOverlapMin", requiredOverlapMin
+                )
+        );
     }
 
     // ---------------------------------------
-    // (1) 주문 생성: BUY=현금잠금 / SELL=전력잠금
+    // (1) 주문 생성
     // ---------------------------------------
     @Transactional
     public EnergyOrder createOrder(EnergyOrder order) {
@@ -163,9 +195,7 @@ public class EnergyOrderService {
             throw new IllegalArgumentException("endTime은 현재보다 뒤여야 함");
         }
 
-        // =========================================================
-        // ✅ [추가] kW=7 기준 최소 endTime 강제
-        // =========================================================
+        // ✅ 최소 endTime 강제 (kWh 기반)
         LocalDateTime minEnd = calcMinEndTime(order.getStartTime(), order.getAmountKwh());
         if (minEnd != null && order.getEndTime().isBefore(minEnd)) {
             throw new IllegalArgumentException(
@@ -174,7 +204,7 @@ public class EnergyOrderService {
             );
         }
 
-        // ✅ BUY: 가중치 기본 + 정규화 + 현금잠금
+        // ✅ BUY: 가중치 + 현금잠금
         if ("buy".equalsIgnoreCase(order.getOrderType())) {
             if (order.getWeightPrice() == null) order.setWeightPrice(0.6);
             if (order.getWeightDistance() == null) order.setWeightDistance(0.3);
@@ -197,7 +227,25 @@ public class EnergyOrderService {
 
         EnergyOrder saved = energyOrderRepository.save(order);
 
-        // ✅ BUY-only: 저장 직후 매칭 1회 시도는 BUY만
+        // ✅ 로그: ORDER_CREATED
+        int requiredOverlapMin = calcRequiredOverlapMinutes(saved.getAmountKwh());
+        eventLogService.log(
+                saved.getUserId(),
+                "ORDER",
+                saved.getId(),
+                "ORDER_CREATED",
+                Map.of(
+                        "orderType", saved.getOrderType(),
+                        "status", saved.getStatus(),
+                        "pricePerKwh", saved.getPricePerKwh(),
+                        "amountKwh", saved.getAmountKwh(),
+                        "startTime", String.valueOf(saved.getStartTime()),
+                        "endTime", String.valueOf(saved.getEndTime()),
+                        "requiredOverlapMin", requiredOverlapMin
+                )
+        );
+
+        // ✅ BUY-only: 저장 직후 매칭 1회
         if ("buy".equalsIgnoreCase(saved.getOrderType())) {
             tryMatchOne(saved);
         }
@@ -206,13 +254,16 @@ public class EnergyOrderService {
     }
 
     // ---------------------------------------
-    // (2) 단일 결정 로직 (BUY-only)
+    // (2) BUY 매칭 트리거
     // ---------------------------------------
     private void tryMatchOne(EnergyOrder triggerOrder) {
         if (!"ACTIVE".equalsIgnoreCase(triggerOrder.getStatus())) return;
-
-        // ✅ BUY-only
         if (!"buy".equalsIgnoreCase(triggerOrder.getOrderType())) return;
+
+        // ✅ endTime 지난 건 매칭 금지 (만료는 OrderExpiryScheduler가 처리)
+        if (triggerOrder.getEndTime() == null || !triggerOrder.getEndTime().isAfter(LocalDateTime.now())) {
+            return;
+        }
 
         User buyer = userRepository.findById(triggerOrder.getUserId()).orElse(null);
         if (buyer == null) return;
@@ -227,7 +278,7 @@ public class EnergyOrderService {
     }
 
     // ---------------------------------------
-    // (3) 후보군 구성: Repo에서 필터링된 SELL pool
+    // (3) SELL 후보군 구성
     // ---------------------------------------
     private List<EnergyOrder> buildSellCandidatesForBuy(EnergyOrder buyOrder) {
 
@@ -235,11 +286,13 @@ public class EnergyOrderService {
         Long buyerId = buyOrder.getUserId();
 
         BigDecimal buyAmount = buyOrder.getAmountKwh();
-        BigDecimal minAmount = buyAmount; // X
-        BigDecimal maxAmount = buyAmount.multiply(SELL_OVERFILL_RATIO).setScale(3, RoundingMode.HALF_UP); // X*1.10
+        BigDecimal minAmount = buyAmount;
+        BigDecimal maxAmount = buyAmount.multiply(SELL_OVERFILL_RATIO).setScale(3, RoundingMode.HALF_UP);
 
         LocalDateTime buyStart = buyOrder.getStartTime();
         LocalDateTime buyEnd = buyOrder.getEndTime();
+
+        int requiredOverlapMin = calcRequiredOverlapMinutes(buyAmount);
 
         List<EnergyOrder> pool = energyOrderRepository.findSellCandidatesForBuyPool(
                 buyPrice,
@@ -248,7 +301,7 @@ public class EnergyOrderService {
                 maxAmount,
                 buyStart,
                 buyEnd,
-                MIN_OVERLAP_MINUTES,
+                requiredOverlapMin,
                 PageRequest.of(0, POOL_SIZE)
         );
 
@@ -257,7 +310,7 @@ public class EnergyOrderService {
     }
 
     // ---------------------------------------
-    // (4) 점수/선택 + “상위K만 잠깐 락”
+    // (4) 점수/선택 + TopK 잠금
     // ---------------------------------------
     private double scoreBuyPref(EnergyOrder buy, User buyer, EnergyOrder sell, User seller,
                                 int minSlack, int maxSlack) {
@@ -356,7 +409,7 @@ public class EnergyOrderService {
     }
 
     // ---------------------------------------
-    // (5) 매칭 실행: “조건부 UPDATE로 선점” + trade 생성 + 잠금 정산
+    // (5) 매칭 실행
     // ---------------------------------------
     @Transactional
     protected void executeMatchWithConditionalUpdates(EnergyOrder buyOrder, EnergyOrder sellOrder) {
@@ -369,7 +422,8 @@ public class EnergyOrderService {
         if (deliveryStart == null || deliveryEnd == null) return;
 
         long overlapMin = Duration.between(deliveryStart, deliveryEnd).toMinutes();
-        if (overlapMin < MIN_OVERLAP_MINUTES) return;
+        int requiredOverlapMin = calcRequiredOverlapMinutes(buyOrder.getAmountKwh());
+        if (overlapMin < requiredOverlapMin) return;
 
         BigDecimal executedAmount = buyOrder.getAmountKwh();
         int executedPrice = sellOrder.getPricePerKwh();
@@ -399,6 +453,72 @@ public class EnergyOrderService {
         trade.setDeliveryEnd(deliveryEnd);
         energyTradeRepository.save(trade);
 
+        // ✅ 로그: ORDER_MATCHED (buyer/seller 각각 1줄)
+        eventLogService.log(
+                buyOrder.getUserId(),
+                "ORDER",
+                buyOrder.getId(),
+                "ORDER_MATCHED",
+                Map.of(
+                        "matchedWithOrderId", sellOrder.getId(),
+                        "executedPrice", executedPrice,
+                        "executedAmountKwh", executedAmount,
+                        "deliveryStart", String.valueOf(deliveryStart),
+                        "deliveryEnd", String.valueOf(deliveryEnd),
+                        "requiredOverlapMin", requiredOverlapMin,
+                        "actualOverlapMin", overlapMin,
+                        "tradeId", trade.getId()
+                )
+        );
+
+        eventLogService.log(
+                sellOrder.getUserId(),
+                "ORDER",
+                sellOrder.getId(),
+                "ORDER_MATCHED",
+                Map.of(
+                        "matchedWithOrderId", buyOrder.getId(),
+                        "executedPrice", executedPrice,
+                        "executedAmountKwh", executedAmount,
+                        "deliveryStart", String.valueOf(deliveryStart),
+                        "deliveryEnd", String.valueOf(deliveryEnd),
+                        "requiredOverlapMin", requiredOverlapMin,
+                        "actualOverlapMin", overlapMin,
+                        "tradeId", trade.getId()
+                )
+        );
+
+        // ✅ 로그: TRADE_CREATED (buyer/seller 각각 1줄)
+        eventLogService.log(
+                buyOrder.getUserId(),
+                "TRADE",
+                trade.getId(),
+                "TRADE_CREATED",
+                Map.of(
+                        "buyOrderId", buyOrder.getId(),
+                        "sellOrderId", sellOrder.getId(),
+                        "pricePerKwh", executedPrice,
+                        "amountKwh", executedAmount,
+                        "deliveryStart", String.valueOf(deliveryStart),
+                        "deliveryEnd", String.valueOf(deliveryEnd)
+                )
+        );
+
+        eventLogService.log(
+                sellOrder.getUserId(),
+                "TRADE",
+                trade.getId(),
+                "TRADE_CREATED",
+                Map.of(
+                        "buyOrderId", buyOrder.getId(),
+                        "sellOrderId", sellOrder.getId(),
+                        "pricePerKwh", executedPrice,
+                        "amountKwh", executedAmount,
+                        "deliveryStart", String.valueOf(deliveryStart),
+                        "deliveryEnd", String.valueOf(deliveryEnd)
+                )
+        );
+
         unlockBuyerExtraLock(buyOrder, executedPrice, executedAmount);
         unlockSellerExtraEnergy(sellOrder, executedAmount);
 
@@ -419,10 +539,12 @@ public class EnergyOrderService {
     }
 
     // =========================================================
-    // ✅ 최소 종료시간 계산 (kWh / kW * 60 + buffer, step으로 올림)
+    // ✅ 핵심: "kWh 기준 최소 필요 시간(분)" 계산
+    // - (kWh/7kW*60) + buffer 후, step 단위로 올림
+    // - 최소 MIN_OVERLAP_MINUTES 보장
     // =========================================================
-    private LocalDateTime calcMinEndTime(LocalDateTime startTime, BigDecimal amountKwh) {
-        if (startTime == null || amountKwh == null) return null;
+    private int calcRequiredOverlapMinutes(BigDecimal amountKwh) {
+        if (amountKwh == null) return MIN_OVERLAP_MINUTES;
 
         BigDecimal minutes = amountKwh
                 .divide(ASSUMED_POWER_KW, 10, RoundingMode.CEILING)
@@ -436,7 +558,16 @@ public class EnergyOrderService {
             if (rem != 0) minTotal += (TIME_STEP_MINUTES - rem);
         }
 
-        return startTime.plusMinutes(minTotal);
+        if (minTotal < MIN_OVERLAP_MINUTES) minTotal = MIN_OVERLAP_MINUTES;
+        if (minTotal > Integer.MAX_VALUE) return Integer.MAX_VALUE;
+        return (int) minTotal;
+    }
+
+    // ✅ 최소 종료시간 계산
+    private LocalDateTime calcMinEndTime(LocalDateTime startTime, BigDecimal amountKwh) {
+        if (startTime == null || amountKwh == null) return null;
+        int needMin = calcRequiredOverlapMinutes(amountKwh);
+        return startTime.plusMinutes(needMin);
     }
 
     // ---------------------------------------
@@ -578,7 +709,7 @@ public class EnergyOrderService {
     }
 
     // ---------------------------------------
-    // 컨트롤러용
+    // 조회용
     // ---------------------------------------
     public List<EnergyOrder> getMyOrdersInProgress(Long userId) {
         return energyOrderRepository.findByUserIdAndStatusNotOrderByCreatedAtDesc(userId, "COMPLETED");
@@ -588,7 +719,9 @@ public class EnergyOrderService {
         return energyOrderRepository.findByUserIdAndStatusOrderByCreatedAtDesc(userId, "COMPLETED");
     }
 
-    // ✅ 여기만 핵심 변경됨: ACTIVE/EXPIRED 삭제 허용
+    // ---------------------------------------
+    // 취소/삭제(B안): 삭제 직전에 로그 기록
+    // ---------------------------------------
     @Transactional
     public void cancelOrder(Long userId, Long orderId) {
         EnergyOrder order = energyOrderRepository.findById(orderId)
@@ -600,12 +733,27 @@ public class EnergyOrderService {
 
         String status = (order.getStatus() == null) ? "" : order.getStatus().toUpperCase();
 
-        // ✅ ACTIVE / EXPIRED 만 취소(삭제) 가능
         if (!(status.equals("ACTIVE") || status.equals("EXPIRED"))) {
             throw new IllegalStateException("대기(ACTIVE) 또는 기간 종료(EXPIRED) 상태만 취소 가능");
         }
 
-        // ✅ 안전하게 잠금 해제(이미 풀렸어도 0 바닥 처리라 터지진 않음)
+        // ✅ 로그: ORDER_DELETED
+        eventLogService.log(
+                order.getUserId(),
+                "ORDER",
+                order.getId(),
+                "ORDER_DELETED",
+                Map.of(
+                        "orderType", order.getOrderType(),
+                        "statusAtDelete", status,
+                        "pricePerKwh", order.getPricePerKwh(),
+                        "amountKwh", order.getAmountKwh(),
+                        "startTime", String.valueOf(order.getStartTime()),
+                        "endTime", String.valueOf(order.getEndTime())
+                )
+        );
+
+        // ✅ 잠금 해제
         if ("buy".equalsIgnoreCase(order.getOrderType())) {
             releaseMoneyForBuyOrder(order);
         } else if ("sell".equalsIgnoreCase(order.getOrderType())) {

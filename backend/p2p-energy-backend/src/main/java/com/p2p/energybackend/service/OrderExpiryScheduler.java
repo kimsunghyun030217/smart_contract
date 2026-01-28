@@ -1,29 +1,42 @@
 package com.p2p.energybackend.service;
 
+import com.p2p.energybackend.model.EnergyOrder;
 import com.p2p.energybackend.repository.EnergyOrderRepository;
-import jakarta.transaction.Transactional;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Service
 public class OrderExpiryScheduler {
 
     private final EnergyOrderRepository orderRepo;
+    private final EnergyOrderService orderService;
 
-    public OrderExpiryScheduler(EnergyOrderRepository orderRepo) {
+    private static final int EXPIRE_BATCH_SIZE = 500;
+
+    public OrderExpiryScheduler(EnergyOrderRepository orderRepo, EnergyOrderService orderService) {
         this.orderRepo = orderRepo;
+        this.orderService = orderService;
     }
 
-    // ✅ 1분마다: endTime 지난 ACTIVE 주문을 EXPIRED로 변경
-    @Scheduled(fixedDelay = 60_000)
-    @Transactional
+    @Scheduled(fixedDelay = 30_000)
     public void expireOrdersJob() {
         LocalDateTime now = LocalDateTime.now();
-        int updated = orderRepo.expireActiveOrders(now);
 
-        // 필요하면 로그
-        // System.out.println("[Scheduler] ACTIVE -> EXPIRED updated=" + updated);
+        List<EnergyOrder> targets = orderRepo.findActiveOrdersToExpire(
+                now, PageRequest.of(0, EXPIRE_BATCH_SIZE)
+        );
+        if (targets == null || targets.isEmpty()) return;
+
+        for (EnergyOrder snap : targets) {
+            try {
+                orderService.expireOrderByScheduler(snap, now);
+            } catch (Exception e) {
+                System.out.println("[OrderExpiryScheduler] expire failed id=" + snap.getId() + " / " + e.getMessage());
+            }
+        }
     }
 }
