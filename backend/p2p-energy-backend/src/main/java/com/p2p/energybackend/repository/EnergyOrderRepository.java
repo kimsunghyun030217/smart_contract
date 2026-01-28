@@ -120,4 +120,14 @@ public interface EnergyOrderRepository extends JpaRepository<EnergyOrder, Long> 
             @Param("fromStatus") String fromStatus,
             @Param("toStatus") String toStatus
     );
+
+    // ✅ Trade가 RUNNING 되면 연결된 주문들도 RUNNING으로 올리기
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+        UPDATE EnergyOrder o
+           SET o.status = 'RUNNING'
+         WHERE o.id IN :ids
+           AND o.status = 'MATCHED'
+    """)
+    int moveMatchedOrdersToRunning(@Param("ids") List<Long> ids);
 }

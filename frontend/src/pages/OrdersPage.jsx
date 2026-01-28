@@ -6,10 +6,10 @@ export default function OrdersPage() {
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(true);
 
-  async function load() {
+  async function load({ silent = false } = {}) {
     try {
       setErr("");
-      setLoading(true);
+      if (!silent) setLoading(true);
 
       const token = localStorage.getItem("token");
 
@@ -29,7 +29,7 @@ export default function OrdersPage() {
     } catch (e) {
       setErr(e.message || "주문내역 불러오기 실패");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }
 
@@ -57,8 +57,15 @@ export default function OrdersPage() {
     }
   };
 
+  // ✅ 최초 1회 로드 + 30초마다 자동 새로고침(폴링)
   useEffect(() => {
     load();
+
+    const timer = setInterval(() => {
+      load({ silent: true }); // 로딩 스피너 없이 조용히 갱신
+    }, 30_000);
+
+    return () => clearInterval(timer);
   }, []);
 
   // ✅ COMPLETED(완료)는 이 페이지에서 숨김
@@ -103,6 +110,7 @@ export default function OrdersPage() {
     const map = {
       ACTIVE: { label: "대기", bg: "rgba(16,185,129,0.10)", color: "#059669" },
       MATCHED: { label: "체결", bg: "rgba(59,130,246,0.10)", color: "#2563eb" },
+      RUNNING: { label: "진행중", bg: "rgba(245,158,11,0.12)", color: "#b45309" }, // ✅ 추가
       COMPLETED: { label: "완료", bg: "rgba(139,92,246,0.10)", color: "#7c3aed" },
       EXPIRED: { label: "만료", bg: "rgba(148,163,184,0.12)", color: "#64748b" },
     };
@@ -137,6 +145,11 @@ export default function OrdersPage() {
         <div style={styles.header}>
           <h1 style={styles.headerTitle}>주문내역 🧾</h1>
           <p style={styles.headerSubtitle}>내가 등록한 거래 주문을 확인할 수 있어요</p>
+
+          {/* ✅ 30초 자동 갱신 안내(선택) */}
+          <div style={{ marginTop: 8, color: "#94a3b8", fontSize: 12, fontWeight: 700 }}>
+            * 30초마다 자동으로 상태가 갱신돼요.
+          </div>
         </div>
 
         {/* 요약 카드 */}
@@ -159,7 +172,7 @@ export default function OrdersPage() {
         <div style={styles.card}>
           <div style={styles.cardTop}>
             <h3 style={styles.cardTitle}>내 주문 목록</h3>
-            <button onClick={load} style={styles.refreshBtn}>
+            <button onClick={() => load()} style={styles.refreshBtn}>
               새로고침
             </button>
           </div>
@@ -300,7 +313,13 @@ const styles = {
     whiteSpace: "nowrap",
   },
   tr: { borderBottom: "1px solid #f1f5f9" },
-  td: { padding: "12px 10px", fontSize: 14, color: "#0f172a", fontWeight: 700, whiteSpace: "nowrap" },
+  td: {
+    padding: "12px 10px",
+    fontSize: 14,
+    color: "#0f172a",
+    fontWeight: 700,
+    whiteSpace: "nowrap",
+  },
   tdRight: {
     padding: "12px 10px",
     fontSize: 14,
