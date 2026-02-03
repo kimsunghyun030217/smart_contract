@@ -11,6 +11,9 @@ import { getMyWallet, chargeMyWallet } from "../api/walletApi";
 import { getMyEnergyWallet, chargeMyEnergy } from "../api/energyWalletApi";
 
 import Layout from "../components/Layout";
+import "./MyPage.css";
+
+const API_BASE = "http://localhost:8080"; // ✅ (선택) 최소 종료시간 계산용 백엔드 (현재 파일에서 사용 안 함)
 
 export default function MyPage() {
   const navigate = useNavigate();
@@ -201,33 +204,29 @@ export default function MyPage() {
 
   return (
     <Layout>
-      <div style={{ padding: "32px" }}>
-        <div style={styles.header}>
-          <h1 style={styles.headerTitle}>마이페이지 👤</h1>
-          <p style={styles.headerSubtitle}>내 정보를 관리하세요</p>
+      <div className="mp-page">
+        <div className="mp-header">
+          <h1 className="mp-headerTitle">마이페이지 👤</h1>
+          <p className="mp-headerSubtitle">내 정보를 관리하세요</p>
         </div>
 
         {/* 계정 정보 */}
-        <div style={styles.settingsCard}>
-          <h3 style={styles.settingsTitle}>계정 정보</h3>
+        <div className="mp-settingsCard">
+          <h3 className="mp-settingsTitle">계정 정보</h3>
 
-          <div style={styles.formGrid}>
-            <div style={{ ...styles.formGroup, gridColumn: "1 / -1" }}>
-              <label style={styles.label}>아이디</label>
+          <div className="mp-formGrid">
+            <div className="mp-formGroup mp-spanAll">
+              <label className="mp-label">아이디</label>
               <input
                 type="text"
                 value={userProfile.userId}
-                style={{
-                  ...styles.input,
-                  background: "#f8fafc",
-                  color: "#94a3b8",
-                }}
+                className="mp-input mp-readonly"
                 readOnly
               />
             </div>
 
-            <div style={styles.formGroup}>
-              <label style={styles.label}>현재 비밀번호</label>
+            <div className="mp-formGroup">
+              <label className="mp-label">현재 비밀번호</label>
               <input
                 type="password"
                 value={userProfile.currentPassword}
@@ -237,13 +236,13 @@ export default function MyPage() {
                     currentPassword: e.target.value,
                   }))
                 }
-                style={styles.input}
+                className="mp-input"
                 placeholder="현재 비밀번호"
               />
             </div>
 
-            <div style={styles.formGroup}>
-              <label style={styles.label}>새 비밀번호</label>
+            <div className="mp-formGroup">
+              <label className="mp-label">새 비밀번호</label>
               <input
                 type="password"
                 value={userProfile.newPassword}
@@ -253,13 +252,13 @@ export default function MyPage() {
                     newPassword: e.target.value,
                   }))
                 }
-                style={styles.input}
+                className="mp-input"
                 placeholder="새 비밀번호"
               />
             </div>
 
-            <div style={styles.formGroup}>
-              <label style={styles.label}>새 비밀번호 확인</label>
+            <div className="mp-formGroup">
+              <label className="mp-label">새 비밀번호 확인</label>
               <input
                 type="password"
                 value={userProfile.confirmPassword}
@@ -269,17 +268,17 @@ export default function MyPage() {
                     confirmPassword: e.target.value,
                   }))
                 }
-                style={styles.input}
+                className="mp-input"
                 placeholder="새 비밀번호 확인"
               />
             </div>
 
-            <div style={styles.formGroup}>
-              <label style={styles.label}>&nbsp;</label>
+            <div className="mp-formGroup">
+              <label className="mp-label">&nbsp;</label>
               <button
                 type="button"
                 onClick={handlePasswordChange}
-                style={styles.inlineBtn}
+                className="mp-inlineBtn"
               >
                 🔐 비밀번호 변경
               </button>
@@ -288,14 +287,14 @@ export default function MyPage() {
         </div>
 
         {/* 주소 정보 */}
-        <div style={styles.settingsCard}>
-          <h3 style={styles.settingsTitle}>주소 정보 📍</h3>
+        <div className="mp-settingsCard">
+          <h3 className="mp-settingsTitle">주소 정보 📍</h3>
 
-          <div style={styles.formGrid}>
-            <div style={{ ...styles.formGroup, gridColumn: "1 / -1" }}>
-              <label style={styles.label}>주소</label>
+          <div className="mp-formGrid">
+            <div className="mp-formGroup mp-spanAll">
+              <label className="mp-label">주소</label>
 
-              <div style={styles.addressInputGroup}>
+              <div className="mp-addressInputGroup">
                 <input
                   type="text"
                   value={userProfile.address}
@@ -305,13 +304,13 @@ export default function MyPage() {
                       address: e.target.value,
                     }))
                   }
-                  style={styles.input}
+                  className="mp-input"
                   placeholder="예) 서울시 강남구 테헤란로 123"
                 />
 
                 <button
                   type="button"
-                  style={styles.searchBtn}
+                  className="mp-searchBtn"
                   onClick={handleAddressSearch}
                 >
                   주소 검색
@@ -319,8 +318,8 @@ export default function MyPage() {
               </div>
             </div>
 
-            <div style={{ ...styles.formGroup, gridColumn: "1 / -1" }}>
-              <label style={styles.label}>상세 주소</label>
+            <div className="mp-formGroup mp-spanAll">
+              <label className="mp-label">상세 주소</label>
               <input
                 type="text"
                 value={userProfile.detailAddress}
@@ -330,35 +329,27 @@ export default function MyPage() {
                     detailAddress: e.target.value,
                   }))
                 }
-                style={styles.input}
+                className="mp-input"
                 placeholder="예) 101동 1001호"
               />
             </div>
 
-            <div style={styles.formGroup}>
-              <label style={styles.label}>위도</label>
+            <div className="mp-formGroup">
+              <label className="mp-label">위도</label>
               <input
                 type="text"
                 value={userProfile.latitude}
-                style={{
-                  ...styles.input,
-                  background: "#f8fafc",
-                  color: "#94a3b8",
-                }}
+                className="mp-input mp-readonly"
                 readOnly
               />
             </div>
 
-            <div style={styles.formGroup}>
-              <label style={styles.label}>경도</label>
+            <div className="mp-formGroup">
+              <label className="mp-label">경도</label>
               <input
                 type="text"
                 value={userProfile.longitude}
-                style={{
-                  ...styles.input,
-                  background: "#f8fafc",
-                  color: "#94a3b8",
-                }}
+                className="mp-input mp-readonly"
                 readOnly
               />
             </div>
@@ -367,76 +358,64 @@ export default function MyPage() {
           <button
             type="button"
             onClick={handleAddressUpdate}
-            style={styles.sectionSaveBtn}
+            className="mp-sectionSaveBtn"
           >
             📍 주소 정보 저장
           </button>
         </div>
 
         {/* ✅ 현금 지갑 */}
-        <div style={styles.settingsCard}>
-          <h3 style={styles.settingsTitle}>현금 지갑 💰</h3>
+        <div className="mp-settingsCard">
+          <h3 className="mp-settingsTitle">현금 지갑 💰</h3>
 
-          <div style={styles.formGrid}>
-            <div style={styles.formGroup}>
-              <label style={styles.label}>총 보유금액</label>
+          <div className="mp-formGrid">
+            <div className="mp-formGroup">
+              <label className="mp-label">총 보유금액</label>
               <input
                 type="text"
                 value={Number(wallet.totalKrw ?? 0).toLocaleString()}
-                style={{
-                  ...styles.input,
-                  background: "#f8fafc",
-                  color: "#94a3b8",
-                }}
+                className="mp-input mp-readonly"
                 readOnly
               />
             </div>
 
-            <div style={styles.formGroup}>
-              <label style={styles.label}>잠금 금액</label>
+            <div className="mp-formGroup">
+              <label className="mp-label">잠금 금액</label>
               <input
                 type="text"
                 value={Number(wallet.lockedKrw ?? 0).toLocaleString()}
-                style={{
-                  ...styles.input,
-                  background: "#f8fafc",
-                  color: "#94a3b8",
-                }}
+                className="mp-input mp-readonly"
                 readOnly
               />
             </div>
 
-            <div style={styles.formGroup}>
-              <label style={styles.label}>사용 가능</label>
+            <div className="mp-formGroup">
+              <label className="mp-label">사용 가능</label>
               <input
                 type="text"
                 value={Number(wallet.availableKrw ?? 0).toLocaleString()}
-                style={{
-                  ...styles.input,
-                  background: "#f8fafc",
-                  color: "#94a3b8",
-                }}
+                className="mp-input mp-readonly"
                 readOnly
               />
             </div>
 
-            <div style={styles.formGroup}>
-              <label style={styles.label}>충전 금액(원)</label>
+            <div className="mp-formGroup">
+              <label className="mp-label">충전 금액(원)</label>
               <input
                 type="number"
                 value={cashChargeAmount}
                 onChange={(e) => setCashChargeAmount(e.target.value)}
-                style={styles.input}
+                className="mp-input"
                 placeholder="예) 500000"
               />
             </div>
 
-            <div style={styles.formGroup}>
-              <label style={styles.label}>&nbsp;</label>
+            <div className="mp-formGroup">
+              <label className="mp-label">&nbsp;</label>
               <button
                 type="button"
                 onClick={handleCashCharge}
-                style={styles.inlineBtn}
+                className="mp-inlineBtn"
               >
                 💰 충전
               </button>
@@ -445,69 +424,57 @@ export default function MyPage() {
         </div>
 
         {/* ✅ 에너지 지갑 */}
-        <div style={styles.settingsCard}>
-          <h3 style={styles.settingsTitle}>에너지 지갑 ⚡</h3>
+        <div className="mp-settingsCard">
+          <h3 className="mp-settingsTitle">에너지 지갑 ⚡</h3>
 
-          <div style={styles.formGrid}>
-            <div style={styles.formGroup}>
-              <label style={styles.label}>총 보유 전력(kWh)</label>
+          <div className="mp-formGrid">
+            <div className="mp-formGroup">
+              <label className="mp-label">총 보유 전력(kWh)</label>
               <input
                 type="text"
                 value={Number(energyWallet.totalKwh ?? 0).toLocaleString()}
-                style={{
-                  ...styles.input,
-                  background: "#f8fafc",
-                  color: "#94a3b8",
-                }}
+                className="mp-input mp-readonly"
                 readOnly
               />
             </div>
 
-            <div style={styles.formGroup}>
-              <label style={styles.label}>잠금 전력(kWh)</label>
+            <div className="mp-formGroup">
+              <label className="mp-label">잠금 전력(kWh)</label>
               <input
                 type="text"
                 value={Number(energyWallet.lockedKwh ?? 0).toLocaleString()}
-                style={{
-                  ...styles.input,
-                  background: "#f8fafc",
-                  color: "#94a3b8",
-                }}
+                className="mp-input mp-readonly"
                 readOnly
               />
             </div>
 
-            <div style={styles.formGroup}>
-              <label style={styles.label}>사용 가능(kWh)</label>
+            <div className="mp-formGroup">
+              <label className="mp-label">사용 가능(kWh)</label>
               <input
                 type="text"
                 value={Number(energyWallet.availableKwh ?? 0).toLocaleString()}
-                style={{
-                  ...styles.input,
-                  background: "#f8fafc",
-                  color: "#94a3b8",
-                }}
+                className="mp-input mp-readonly"
                 readOnly
               />
             </div>
 
-            <div style={styles.formGroup}>
-              <label style={styles.label}>충전(kWh)</label>
+            <div className="mp-formGroup">
+              <label className="mp-label">충전(kWh)</label>
               <input
                 type="number"
                 value={energyChargeAmount}
                 onChange={(e) => setEnergyChargeAmount(e.target.value)}
-                style={styles.input}
+                className="mp-input"
                 placeholder="예) 10"
               />
             </div>
 
-            <div style={styles.formGroup}>
-              <label style={styles.label}>&nbsp;</label>
+            <div className="mp-formGroup">
+              <label className="mp-label">&nbsp;</label>
               <button
                 type="button"
                 onClick={handleEnergyCharge}
-                style={styles.inlineBtn}
+                className="mp-inlineBtn"
               >
                 ⚡ 충전
               </button>
@@ -518,77 +485,3 @@ export default function MyPage() {
     </Layout>
   );
 }
-
-const styles = {
-  header: { marginBottom: "32px" },
-  headerTitle: {
-    fontSize: "32px",
-    fontWeight: "800",
-    color: "#0f172a",
-    margin: "0 0 8px 0",
-  },
-  headerSubtitle: { fontSize: "16px", color: "#64748b", margin: 0 },
-  settingsCard: {
-    background: "white",
-    padding: "32px",
-    borderRadius: "16px",
-    border: "2px solid #e2e8f0",
-    marginBottom: "24px",
-  },
-  settingsTitle: {
-    fontSize: "20px",
-    fontWeight: "700",
-    color: "#0f172a",
-    margin: "0 0 8px 0",
-  },
-  formGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
-    gap: "20px",
-    marginBottom: "20px",
-  },
-  formGroup: { display: "flex", flexDirection: "column", gap: "8px" },
-  label: { fontSize: "14px", fontWeight: "600", color: "#0f172a" },
-  input: {
-    padding: "14px 16px",
-    fontSize: "15px",
-    border: "2px solid #e2e8f0",
-    borderRadius: "12px",
-    fontWeight: "600",
-    outline: "none",
-    transition: "all 0.2s",
-  },
-  addressInputGroup: { display: "flex", gap: "12px" },
-  searchBtn: {
-    padding: "14px 24px",
-    fontSize: "14px",
-    fontWeight: "700",
-    color: "white",
-    background: "linear-gradient(135deg, #10b981 0%, #3b82f6 100%)",
-    border: "none",
-    borderRadius: "12px",
-    cursor: "pointer",
-  },
-  sectionSaveBtn: {
-    width: "100%",
-    padding: "16px",
-    fontSize: "16px",
-    fontWeight: "700",
-    color: "white",
-    background: "linear-gradient(135deg, #10b981 0%, #3b82f6 100%)",
-    border: "none",
-    borderRadius: "12px",
-    cursor: "pointer",
-  },
-  inlineBtn: {
-    width: "100%",
-    padding: "14px 16px",
-    fontSize: "15px",
-    fontWeight: "700",
-    color: "white",
-    background: "linear-gradient(135deg, #10b981 0%, #3b82f6 100%)",
-    border: "none",
-    borderRadius: "12px",
-    cursor: "pointer",
-  },
-};

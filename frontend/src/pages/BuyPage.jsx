@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect } from "react";
 import Layout from "../components/Layout";
 import { getMarket } from "../web3/market"; // ✅ 추가: 온체인 호출
+import "./BuyPage.css";
 
 const API_BASE = "http://localhost:8080"; // ✅ (선택) 최소 종료시간 계산용 백엔드
 
@@ -170,7 +171,7 @@ export default function BuyPage() {
 
       // 현재 가상 KRW 잔고/잠금 조회해서 부족하면 자동 fund
       if (addr) {
-        const bal = await market.krwBalance(addr);   // bigint
+        const bal = await market.krwBalance(addr); // bigint
         const locked = await market.krwLocked(addr); // bigint
         const available = bal - locked;
 
@@ -202,7 +203,9 @@ export default function BuyPage() {
       const createdId = (BigInt(nextId) - 1n).toString();
 
       alert(
-        `✅ 온체인 구매 주문 등록 완료!\n주문ID: ${createdId}\nTx: ${receipt?.hash || tx.hash}`
+        `✅ 온체인 구매 주문 등록 완료!\n주문ID: ${createdId}\nTx: ${
+          receipt?.hash || tx.hash
+        }`
       );
 
       // 폼 리셋
@@ -217,103 +220,100 @@ export default function BuyPage() {
       console.error(e);
 
       // 메타마스크 거절/리버트 메시지 간단 처리
-      const msg =
-        e?.shortMessage ||
-        e?.reason ||
-        e?.message ||
-        "알 수 없는 오류";
+      const msg = e?.shortMessage || e?.reason || e?.message || "알 수 없는 오류";
       alert("❌ 온체인 주문 등록 실패!\n" + msg);
     }
   }
 
   return (
     <Layout>
-      <div style={container}>
+      <div className="bp-container">
         {/* 헤더 섹션 */}
-        <div style={header}>
-          <div style={headerContent}>
-            <div style={iconWrapper}>
-              <span style={icon}>⚡</span>
+        <div className="bp-header">
+          <div className="bp-headerContent">
+            <div className="bp-iconWrapper">
+              <span className="bp-icon">⚡</span>
             </div>
             <div>
-              <h1 style={title}>에너지 구매</h1>
-              <p style={subtitle}>필요한 에너지를 원하는 가격과 시간에 구매하세요</p>
-              <p style={{ margin: "8px 0 0", color: "#64748b", fontSize: 12 }}>
-                ※ PoC: 주문 등록은 <b>온체인(createOrder)</b>으로 처리됩니다. (가중치/최소종료시간은 화면 편의용)
+              <h1 className="bp-title">에너지 구매</h1>
+              <p className="bp-subtitle">필요한 에너지를 원하는 가격과 시간에 구매하세요</p>
+              <p className="bp-note">
+                ※ PoC: 주문 등록은 <b>온체인(createOrder)</b>으로 처리됩니다.
+                (가중치/최소종료시간은 화면 편의용)
               </p>
             </div>
           </div>
         </div>
 
         {/* 구매 카드 */}
-        <div style={cardWrapper}>
-          <div style={card}>
-            <div style={cardHeader}>
-              <h2 style={cardTitle}>구매 정보 입력</h2>
+        <div className="bp-cardWrapper">
+          <div className="bp-card">
+            <div className="bp-cardHeader">
+              <h2 className="bp-cardTitle">구매 정보 입력</h2>
             </div>
 
             {/* 수량 & 가격 그리드 */}
-            <div style={formGrid}>
-              <div style={inputGroup}>
-                <label style={label}>
-                  <span style={labelIcon}>🔋</span>
+            <div className="bp-formGrid">
+              <div className="bp-inputGroup">
+                <label className="bp-label">
+                  <span className="bp-labelIcon">🔋</span>
                   구매 전력량
                 </label>
-                <div style={inputWrapper}>
+                <div className="bp-inputWrapper">
                   <input
                     type="number"
                     placeholder="50"
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
-                    style={input}
+                    className="bp-input"
                   />
-                  <span style={inputUnit}>kWh</span>
+                  <span className="bp-inputUnit">kWh</span>
                 </div>
               </div>
 
-              <div style={inputGroup}>
-                <label style={label}>
-                  <span style={labelIcon}>💰</span>
+              <div className="bp-inputGroup">
+                <label className="bp-label">
+                  <span className="bp-labelIcon">💰</span>
                   희망 구매 가격
                 </label>
-                <div style={inputWrapper}>
+                <div className="bp-inputWrapper">
                   <input
                     type="number"
                     placeholder="150"
                     value={price}
                     onChange={(e) => setPrice(e.target.value)}
-                    style={input}
+                    className="bp-input"
                   />
-                  <span style={inputUnit}>₩/kWh</span>
+                  <span className="bp-inputUnit">₩/kWh</span>
                 </div>
               </div>
             </div>
 
             {/* 시간 범위 */}
-            <div style={timeSection}>
-              <label style={label}>
-                <span style={labelIcon}>⏰</span>
+            <div className="bp-timeSection">
+              <label className="bp-label">
+                <span className="bp-labelIcon">⏰</span>
                 구매 기간 설정
               </label>
 
-              <div style={timeRow}>
-                <div style={timeBox}>
-                  <span style={timeLabel}>시작 시간</span>
+              <div className="bp-timeRow">
+                <div className="bp-timeBox">
+                  <span className="bp-timeLabel">시작 시간</span>
                   <input
                     type="datetime-local"
-                    style={timeInput}
+                    className="bp-timeInput"
                     value={startTime}
                     onChange={(e) => setStartTime(e.target.value)}
                   />
                 </div>
 
-                <div style={arrowIcon}>→</div>
+                <div className="bp-arrowIcon">→</div>
 
-                <div style={timeBox}>
-                  <span style={timeLabel}>종료 시간</span>
+                <div className="bp-timeBox">
+                  <span className="bp-timeLabel">종료 시간</span>
                   <input
                     type="datetime-local"
-                    style={timeInput}
+                    className="bp-timeInput"
                     value={endTime}
                     min={minEndTime || undefined}
                     onChange={(e) => onChangeEndTime(e.target.value)}
@@ -322,10 +322,11 @@ export default function BuyPage() {
               </div>
 
               {(minEndTime || minEndMsg) && (
-                <div style={minEndHint}>
+                <div className="bp-minEndHint">
                   {minEndTime ? (
                     <>
-                      ✅ 최소 종료시간: <b>{minEndTime.replace("T", " ")}</b> (7kW 기준 + 버퍼)
+                      ✅ 최소 종료시간: <b>{minEndTime.replace("T", " ")}</b>{" "}
+                      (7kW 기준 + 버퍼)
                     </>
                   ) : (
                     <>⚠️ {minEndMsg}</>
@@ -335,32 +336,46 @@ export default function BuyPage() {
             </div>
 
             {/* ✅ 매칭 가중치 카드 (PoC에서는 온체인 저장 안 함) */}
-            <div style={weightCard}>
-              <div style={weightTop}>
-                <div style={weightTitle}>매칭 기준 설정</div>
-                <div style={weightSummary}>{weightSummaryText}</div>
+            <div className="bp-weightCard">
+              <div className="bp-weightTop">
+                <div className="bp-weightTitle">매칭 기준 설정</div>
+                <div className="bp-weightSummary">{weightSummaryText}</div>
               </div>
 
-              <div style={presetRow}>
-                <button style={presetBtn} onClick={() => setWeights(presets.cheap)}>
+              <div className="bp-presetRow">
+                <button
+                  className="bp-presetBtn"
+                  onClick={() => setWeights(presets.cheap)}
+                >
                   최저가 우선
                 </button>
-                <button style={presetBtn} onClick={() => setWeights(presets.near)}>
+                <button
+                  className="bp-presetBtn"
+                  onClick={() => setWeights(presets.near)}
+                >
                   가까운 거래
                 </button>
-                <button style={presetBtn} onClick={() => setWeights(presets.safe)}>
+                <button
+                  className="bp-presetBtn"
+                  onClick={() => setWeights(presets.safe)}
+                >
                   안전 우선
                 </button>
-                <button style={presetBtn} onClick={() => setWeights(presets.balanced)}>
+                <button
+                  className="bp-presetBtn"
+                  onClick={() => setWeights(presets.balanced)}
+                >
                   기본값
                 </button>
               </div>
 
-              <div style={weightGrid}>
-                <div style={weightItem}>
-                  <div style={weightLabelRow}>
-                    <span style={weightLabel}>가격 중요도</span>
-                    <span style={weightPct}>{Math.round(weights.price * 100)}%</span>
+              <div className="bp-weightGrid">
+                <div className="bp-weightItem">
+                  <div className="bp-weightLabelRow">
+                    <span className="bp-weightLabel">가격 중요도</span>
+                    <span className="bp-weightPct">
+                      {Math.round(weights.price * 100)}%
+                    </span>
                   </div>
                   <input
                     type="range"
@@ -369,15 +384,19 @@ export default function BuyPage() {
                     step="0.01"
                     value={weights.price}
                     onChange={(e) => setWeight("price", Number(e.target.value))}
-                    style={range}
+                    className="bp-range"
                   />
-                  <div style={weightHint}>가격이 유리한 상대를 더 우선 매칭</div>
+                  <div className="bp-weightHint">
+                    가격이 유리한 상대를 더 우선 매칭
+                  </div>
                 </div>
 
-                <div style={weightItem}>
-                  <div style={weightLabelRow}>
-                    <span style={weightLabel}>거리 중요도</span>
-                    <span style={weightPct}>{Math.round(weights.distance * 100)}%</span>
+                <div className="bp-weightItem">
+                  <div className="bp-weightLabelRow">
+                    <span className="bp-weightLabel">거리 중요도</span>
+                    <span className="bp-weightPct">
+                      {Math.round(weights.distance * 100)}%
+                    </span>
                   </div>
                   <input
                     type="range"
@@ -385,16 +404,22 @@ export default function BuyPage() {
                     max="1"
                     step="0.01"
                     value={weights.distance}
-                    onChange={(e) => setWeight("distance", Number(e.target.value))}
-                    style={range}
+                    onChange={(e) =>
+                      setWeight("distance", Number(e.target.value))
+                    }
+                    className="bp-range"
                   />
-                  <div style={weightHint}>가까운 상대를 더 우선 매칭</div>
+                  <div className="bp-weightHint">
+                    가까운 상대를 더 우선 매칭
+                  </div>
                 </div>
 
-                <div style={weightItem}>
-                  <div style={weightLabelRow}>
-                    <span style={weightLabel}>신뢰 중요도</span>
-                    <span style={weightPct}>{Math.round(weights.trust * 100)}%</span>
+                <div className="bp-weightItem">
+                  <div className="bp-weightLabelRow">
+                    <span className="bp-weightLabel">신뢰 중요도</span>
+                    <span className="bp-weightPct">
+                      {Math.round(weights.trust * 100)}%
+                    </span>
                   </div>
                   <input
                     type="range"
@@ -403,34 +428,39 @@ export default function BuyPage() {
                     step="0.01"
                     value={weights.trust}
                     onChange={(e) => setWeight("trust", Number(e.target.value))}
-                    style={range}
+                    className="bp-range"
                   />
-                  <div style={weightHint}>신뢰도 높은 상대를 더 우선 매칭</div>
+                  <div className="bp-weightHint">
+                    신뢰도 높은 상대를 더 우선 매칭
+                  </div>
                 </div>
               </div>
 
-              <div style={weightFootnote}>
-                합계는 자동으로 100%로 맞춰져요. (PoC: 이 값은 온체인에 저장되지 않아요)
+              <div className="bp-weightFootnote">
+                합계는 자동으로 100%로 맞춰져요. (PoC: 이 값은 온체인에 저장되지
+                않아요)
               </div>
             </div>
 
             {/* 예상 금액 카드 */}
             {amount && price && (
-              <div style={estimateCard}>
-                <div style={estimateRow}>
-                  <span style={estimateLabel}>구매 수량</span>
-                  <span style={estimateValue}>
+              <div className="bp-estimateCard">
+                <div className="bp-estimateRow">
+                  <span className="bp-estimateLabel">구매 수량</span>
+                  <span className="bp-estimateValue">
                     {parseFloat(amount).toLocaleString()} kWh
                   </span>
                 </div>
-                <div style={estimateRow}>
-                  <span style={estimateLabel}>희망 단가</span>
-                  <span style={estimateValue}>₩{parseFloat(price).toLocaleString()}</span>
+                <div className="bp-estimateRow">
+                  <span className="bp-estimateLabel">희망 단가</span>
+                  <span className="bp-estimateValue">
+                    ₩{parseFloat(price).toLocaleString()}
+                  </span>
                 </div>
-                <div style={estimateDivider} />
-                <div style={estimateRow}>
-                  <span style={estimateLabelTotal}>예상 결제금액</span>
-                  <span style={estimateValueTotal}>
+                <div className="bp-estimateDivider" />
+                <div className="bp-estimateRow">
+                  <span className="bp-estimateLabelTotal">예상 결제금액</span>
+                  <span className="bp-estimateValueTotal">
                     ₩{(parseFloat(amount) * parseFloat(price)).toLocaleString()}
                   </span>
                 </div>
@@ -438,224 +468,17 @@ export default function BuyPage() {
             )}
 
             {/* ✅ 버튼: 백엔드 POST 대신 온체인 트랜잭션 */}
-            <button style={primaryBtn} onClick={submitBuyOrder}>
-              <span style={btnIcon}>✓</span>
+            <button className="bp-primaryBtn" onClick={submitBuyOrder}>
+              <span className="bp-btnIcon">✓</span>
               구매 주문 등록하기 (온체인)
             </button>
 
-            <div style={notice}>💡 PoC: 주문은 블록체인에 기록됩니다. (메타마스크 서명 필요)</div>
+            <div className="bp-notice">
+              💡 PoC: 주문은 블록체인에 기록됩니다. (메타마스크 서명 필요)
+            </div>
           </div>
         </div>
       </div>
     </Layout>
   );
 }
-
-/* ===== styles ===== */
-
-const container = { padding: "48px 32px", maxWidth: 800, margin: "0 auto" };
-const header = { marginBottom: 48 };
-const headerContent = { display: "flex", alignItems: "center", gap: 20 };
-const iconWrapper = {
-  width: 64,
-  height: 64,
-  borderRadius: 20,
-  background: "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  boxShadow: "0 8px 24px rgba(59, 130, 246, 0.3)",
-};
-const icon = { fontSize: 32 };
-const title = {
-  fontSize: 36,
-  fontWeight: 800,
-  margin: 0,
-  marginBottom: 4,
-  background: "linear-gradient(135deg, #1e293b 0%, #475569 100%)",
-  WebkitBackgroundClip: "text",
-  WebkitTextFillColor: "transparent",
-};
-const subtitle = { fontSize: 16, color: "#64748b", margin: 0 };
-const cardWrapper = { display: "flex", justifyContent: "center" };
-const card = {
-  background: "white",
-  padding: 48,
-  borderRadius: 24,
-  border: "2px solid #e2e8f0",
-  boxShadow: "0 4px 24px rgba(0, 0, 0, 0.06)",
-  width: "100%",
-  maxWidth: 700,
-};
-const cardHeader = { marginBottom: 32 };
-const cardTitle = { fontSize: 28, fontWeight: 700, margin: 0, color: "#1f2937" };
-
-const formGrid = {
-  display: "grid",
-  gridTemplateColumns: "1fr 1fr",
-  gap: 24,
-  marginBottom: 28,
-};
-const inputGroup = { display: "flex", flexDirection: "column" };
-const label = {
-  display: "flex",
-  alignItems: "center",
-  fontSize: 14,
-  fontWeight: 700,
-  color: "#374151",
-  marginBottom: 10,
-  gap: 6,
-};
-const labelIcon = { fontSize: 16 };
-const inputWrapper = { position: "relative" };
-const input = {
-  width: "100%",
-  padding: "14px 16px",
-  paddingRight: "60px",
-  fontSize: 16,
-  fontWeight: 500,
-  border: "2px solid #e5e7eb",
-  borderRadius: 12,
-  outline: "none",
-  transition: "all 0.2s ease",
-  boxSizing: "border-box",
-};
-const inputUnit = {
-  position: "absolute",
-  right: 16,
-  top: "50%",
-  transform: "translateY(-50%)",
-  fontSize: 13,
-  fontWeight: 600,
-  color: "#9ca3af",
-  pointerEvents: "none",
-};
-
-const timeSection = { marginBottom: 20 };
-const timeRow = {
-  display: "grid",
-  gridTemplateColumns: "1fr auto 1fr",
-  gap: 16,
-  alignItems: "center",
-};
-const timeBox = { display: "flex", flexDirection: "column", gap: 8 };
-const timeLabel = { fontSize: 13, fontWeight: 600, color: "#6b7280" };
-const timeInput = {
-  padding: "14px 12px",
-  fontSize: 14,
-  border: "2px solid #e5e7eb",
-  borderRadius: 12,
-  outline: "none",
-  transition: "all 0.2s ease",
-  fontWeight: 500,
-  width: "100%",
-  boxSizing: "border-box",
-};
-const arrowIcon = {
-  fontSize: 24,
-  color: "#3b82f6",
-  fontWeight: 700,
-  marginTop: 20,
-};
-const minEndHint = {
-  marginTop: 10,
-  fontSize: 12,
-  color: "#475569",
-  background: "#f1f5f9",
-  border: "1px solid #e2e8f0",
-  padding: "10px 12px",
-  borderRadius: 12,
-};
-
-const weightCard = {
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
-  padding: 18,
-  borderRadius: 16,
-  marginBottom: 24,
-};
-const weightTop = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "baseline",
-  gap: 12,
-  marginBottom: 12,
-};
-const weightTitle = { fontWeight: 900, color: "#0f172a" };
-const weightSummary = { fontSize: 12, fontWeight: 800, color: "#64748b" };
-const presetRow = { display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 };
-const presetBtn = {
-  padding: "8px 10px",
-  borderRadius: 12,
-  border: "1px solid #e2e8f0",
-  background: "white",
-  cursor: "pointer",
-  fontWeight: 800,
-  fontSize: 12,
-  color: "#334155",
-};
-const weightGrid = { display: "grid", gap: 14 };
-const weightItem = {
-  background: "white",
-  border: "1px solid #e2e8f0",
-  borderRadius: 14,
-  padding: 14,
-};
-const weightLabelRow = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  marginBottom: 8,
-};
-const weightLabel = { fontSize: 13, fontWeight: 900, color: "#0f172a" };
-const weightPct = { fontSize: 12, fontWeight: 900, color: "#2563eb" };
-const range = { width: "100%" };
-const weightHint = { fontSize: 12, color: "#64748b", marginTop: 6 };
-const weightFootnote = { fontSize: 12, color: "#94a3b8", marginTop: 10 };
-
-const estimateCard = {
-  background: "#f0f9ff",
-  padding: 24,
-  borderRadius: 16,
-  marginBottom: 24,
-  border: "1px solid #bae6fd",
-};
-const estimateRow = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  marginBottom: 10,
-};
-const estimateLabel = { fontSize: 14, color: "#475569", fontWeight: 600 };
-const estimateValue = { fontSize: 15, fontWeight: 700, color: "#0f172a" };
-const estimateDivider = { height: 1, background: "#bae6fd", margin: "16px 0" };
-const estimateLabelTotal = { fontSize: 15, color: "#0c4a6e", fontWeight: 700 };
-const estimateValueTotal = { fontSize: 20, fontWeight: 900, color: "#0c4a6e" };
-
-const primaryBtn = {
-  width: "100%",
-  padding: "18px 24px",
-  background: "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)",
-  color: "white",
-  border: "none",
-  borderRadius: 14,
-  fontWeight: 700,
-  fontSize: 17,
-  cursor: "pointer",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  gap: 8,
-  boxShadow: "0 4px 16px rgba(59, 130, 246, 0.3)",
-  transition: "all 0.3s ease",
-  marginBottom: 20,
-};
-const btnIcon = { fontSize: 20 };
-const notice = {
-  fontSize: 13,
-  color: "#6b7280",
-  textAlign: "center",
-  padding: 16,
-  background: "#f9fafb",
-  borderRadius: 10,
-};
