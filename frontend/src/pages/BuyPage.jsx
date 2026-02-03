@@ -1,7 +1,8 @@
 import React, { useMemo, useState, useEffect } from "react";
 import Layout from "../components/Layout";
+import { getMarket } from "../web3/market"; // ✅ 추가: 온체인 호출
 
-const API_BASE = "http://localhost:8080";
+const API_BASE = "http://localhost:8080"; // ✅ (선택) 최소 종료시간 계산용 백엔드
 
 export default function BuyPage() {
   const [amount, setAmount] = useState("");
@@ -54,9 +55,7 @@ export default function BuyPage() {
   }, [weights]);
 
   // =========================================
-  // ✅ [추가] 최소 종료시간(minEndTime) 조회
-  // - startTime/amount 바뀌면 서버에 물어봄
-  // - 너무 짧은 endTime이면 자동 보정
+  // ✅ 최소 종료시간(minEndTime) 조회 (백엔드)
   // =========================================
   useEffect(() => {
     async function fetchMinEndTime() {
@@ -83,13 +82,12 @@ export default function BuyPage() {
         }
 
         const data = JSON.parse(txt);
-        const iso = data.minEndTime; // ex) "2026-01-27T22:30:00"
+        const iso = data.minEndTime;
         if (!iso) return;
 
-        const localVal = iso.slice(0, 16); // datetime-local 포맷(YYYY-MM-DDTHH:mm)
+        const localVal = iso.slice(0, 16); // YYYY-MM-DDTHH:mm
         setMinEndTime(localVal);
 
-        // endTime이 없거나, minEndTime보다 빠르면 자동 보정
         if (!endTime || endTime < localVal) {
           setEndTime(localVal);
         }
@@ -99,12 +97,10 @@ export default function BuyPage() {
       }
     }
 
-    // 아주 짧은 디바운스(타이핑 중 과호출 방지)
     const t = setTimeout(fetchMinEndTime, 200);
     return () => clearTimeout(t);
-  }, [startTime, amount]); // endTime은 의도적으로 제외
+  }, [startTime, amount]); // endTime 제외(의도)
 
-  // endTime을 사용자가 바꿀 때도 minEndTime보다 빠르면 막기
   function onChangeEndTime(v) {
     if (minEndTime && v < minEndTime) {
       alert(`종료 시간은 최소 ${minEndTime.replace("T", " ")} 이후여야 합니다.`);
@@ -114,57 +110,119 @@ export default function BuyPage() {
     setEndTime(v);
   }
 
+  // =========================================
+  // ✅ 온체인 BUY 주문 등록
+  // - side = 0 (BUY)
+  // - fund()로 PoC 가상 KRW 충전(부족하면 자동 충전)
+  // - createOrder() 트랜잭션 전송
+  // =========================================
   async function submitBuyOrder() {
-    if (!amount || !price || !startTime || !endTime) {
-      alert("모든 값을 입력해주세요.");
-      return;
-    }
-
-    if (minEndTime && endTime < minEndTime) {
-      alert(`종료 시간은 최소 ${minEndTime.replace("T", " ")} 이후여야 합니다.`);
-      return;
-    }
-
-    const order = {
-      orderType: "buy",
-      pricePerKwh: Number(price),
-      amountKwh: Number(amount),
-      startTime: startTime + ":00",
-      endTime: endTime + ":00",
-      status: "ACTIVE",
-      weightPrice: Number(weights.price.toFixed(4)),
-      weightDistance: Number(weights.distance.toFixed(4)),
-      weightTrust: Number(weights.trust.toFixed(4)),
-    };
-
     try {
-      const token = localStorage.getItem("token");
-
-      const res = await fetch(`${API_BASE}/orders`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: "Bearer " + token } : {}),
-        },
-        body: JSON.stringify(order),
-      });
-
-      if (res.ok) {
-        alert("구매 주문이 등록되었습니다!");
-        setAmount("");
-        setPrice("");
-        setStartTime("");
-        setEndTime("");
-        setMinEndTime("");
-        setMinEndMsg("");
-        setWeights(presets.balanced);
-      } else {
-        const msg = await res.text().catch(() => "");
-        alert("주문 등록 실패! " + msg);
+      if (!amount || !price || !startTime || !endTime) {
+        alert("모든 값을 입력해주세요.");
+        return;
       }
+
+      if (minEndTime && endTime < minEndTime) {
+        alert(`종료 시간은 최소 ${minEndTime.replace("T", " ")} 이후여야 합니다.`);
+        return;
+      }
+
+      // 컨트랙트는 uint256이라 PoC에서는 정수로만 처리 권장
+      const amountInt = Math.floor(Number(amount));
+      const priceInt = Math.floor(Number(price));
+
+      if (!Number.isFinite(amountInt) || amountInt <= 0) {
+        alert("구매 전력량(kWh)은 1 이상 정수로 입력해주세요.");
+        return;
+      }
+      if (!Number.isFinite(priceInt) || priceInt <= 0) {
+        alert("가격(₩/kWh)은 1 이상 정수로 입력해주세요.");
+        return;
+      }
+
+      // datetime-local -> unix seconds
+      const startSec = Math.floor(new Date(startTime).getTime() / 1000);
+      const endSec = Math.floor(new Date(endTime).getTime() / 1000);
+      const nowSec = Math.floor(Date.now() / 1000);
+
+      if (!Number.isFinite(startSec) || !Number.isFinite(endSec)) {
+        alert("시간 형식이 올바르지 않습니다.");
+        return;
+      }
+      if (startSec >= endSec) {
+        alert("종료 시간은 시작 시간 이후여야 합니다.");
+        return;
+      }
+      if (endSec <= nowSec) {
+        alert("종료 시간은 현재보다 미래여야 합니다.");
+        return;
+      }
+
+      const market = await getMarket();
+
+      // signer 주소
+      const addr =
+        market?.runner?.getAddress ? await market.runner.getAddress() : null;
+
+      // 비용 = amount * price
+      const cost = BigInt(amountInt) * BigInt(priceInt);
+
+      // 현재 가상 KRW 잔고/잠금 조회해서 부족하면 자동 fund
+      if (addr) {
+        const bal = await market.krwBalance(addr);   // bigint
+        const locked = await market.krwLocked(addr); // bigint
+        const available = bal - locked;
+
+        if (available < cost) {
+          const need = cost - available;
+          // PoC: 부족분만큼 자동 충전
+          const txFund = await market.fund(need, 0);
+          await txFund.wait();
+        }
+      } else {
+        // 주소 못 가져오면 그냥 넉넉히 충전(최후수단)
+        const txFund = await market.fund(cost, 0);
+        await txFund.wait();
+      }
+
+      // BUY=0
+      const tx = await market.createOrder(
+        0,
+        BigInt(amountInt),
+        BigInt(priceInt),
+        BigInt(startSec),
+        BigInt(endSec)
+      );
+
+      const receipt = await tx.wait();
+
+      // 주문 id는 nextOrderId() - 1 로 추정(트랜잭션 완료 후)
+      const nextId = await market.nextOrderId();
+      const createdId = (BigInt(nextId) - 1n).toString();
+
+      alert(
+        `✅ 온체인 구매 주문 등록 완료!\n주문ID: ${createdId}\nTx: ${receipt?.hash || tx.hash}`
+      );
+
+      // 폼 리셋
+      setAmount("");
+      setPrice("");
+      setStartTime("");
+      setEndTime("");
+      setMinEndTime("");
+      setMinEndMsg("");
+      setWeights(presets.balanced);
     } catch (e) {
       console.error(e);
-      alert("서버 연결 실패!");
+
+      // 메타마스크 거절/리버트 메시지 간단 처리
+      const msg =
+        e?.shortMessage ||
+        e?.reason ||
+        e?.message ||
+        "알 수 없는 오류";
+      alert("❌ 온체인 주문 등록 실패!\n" + msg);
     }
   }
 
@@ -180,6 +238,9 @@ export default function BuyPage() {
             <div>
               <h1 style={title}>에너지 구매</h1>
               <p style={subtitle}>필요한 에너지를 원하는 가격과 시간에 구매하세요</p>
+              <p style={{ margin: "8px 0 0", color: "#64748b", fontSize: 12 }}>
+                ※ PoC: 주문 등록은 <b>온체인(createOrder)</b>으로 처리됩니다. (가중치/최소종료시간은 화면 편의용)
+              </p>
             </div>
           </div>
         </div>
@@ -254,17 +315,18 @@ export default function BuyPage() {
                     type="datetime-local"
                     style={timeInput}
                     value={endTime}
-                    min={minEndTime || undefined}   // ✅ 핵심: 최소값 제한
+                    min={minEndTime || undefined}
                     onChange={(e) => onChangeEndTime(e.target.value)}
                   />
                 </div>
               </div>
 
-              {/* ✅ 최소 종료시간 안내 */}
               {(minEndTime || minEndMsg) && (
                 <div style={minEndHint}>
                   {minEndTime ? (
-                    <>✅ 최소 종료시간: <b>{minEndTime.replace("T", " ")}</b> (7kW 기준 + 버퍼)</>
+                    <>
+                      ✅ 최소 종료시간: <b>{minEndTime.replace("T", " ")}</b> (7kW 기준 + 버퍼)
+                    </>
                   ) : (
                     <>⚠️ {minEndMsg}</>
                   )}
@@ -272,7 +334,7 @@ export default function BuyPage() {
               )}
             </div>
 
-            {/* ✅ 매칭 가중치 카드 */}
+            {/* ✅ 매칭 가중치 카드 (PoC에서는 온체인 저장 안 함) */}
             <div style={weightCard}>
               <div style={weightTop}>
                 <div style={weightTitle}>매칭 기준 설정</div>
@@ -347,7 +409,9 @@ export default function BuyPage() {
                 </div>
               </div>
 
-              <div style={weightFootnote}>합계는 자동으로 100%로 맞춰져요.</div>
+              <div style={weightFootnote}>
+                합계는 자동으로 100%로 맞춰져요. (PoC: 이 값은 온체인에 저장되지 않아요)
+              </div>
             </div>
 
             {/* 예상 금액 카드 */}
@@ -373,12 +437,13 @@ export default function BuyPage() {
               </div>
             )}
 
+            {/* ✅ 버튼: 백엔드 POST 대신 온체인 트랜잭션 */}
             <button style={primaryBtn} onClick={submitBuyOrder}>
               <span style={btnIcon}>✓</span>
-              구매 주문 등록하기
+              구매 주문 등록하기 (온체인)
             </button>
 
-            <div style={notice}>💡 등록된 주문은 매칭 시스템을 통해 자동으로 거래됩니다</div>
+            <div style={notice}>💡 PoC: 주문은 블록체인에 기록됩니다. (메타마스크 서명 필요)</div>
           </div>
         </div>
       </div>
