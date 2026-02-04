@@ -4,44 +4,55 @@ import { Link, useNavigate } from "react-router-dom";
 function Login() {
   const [userId, setUserId] = useState("");
   const [password, setPassword] = useState("");
+
+  // ✅ 로그인 유지 체크박스 state 추가
+  const [rememberMe, setRememberMe] = useState(true); // 기본값: 유지 ON (PoC 편의)
+
   const navigate = useNavigate();
 
   const handleLogin = async (e) => {
-  e.preventDefault();
-  
-  try {
-    // 백엔드로 로그인 요청
-    const response = await fetch('http://localhost:8080/api/auth/login', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        username: userId,
-        password: password
-      })
-    });
-    
-    const data = await response.json();
-    
-    if (data.success) {
-      alert(`${data.username}님, 로그인 성공! 🎉`);
+    e.preventDefault();
 
-      localStorage.setItem("token",data.token)
-      localStorage.setItem("username",data.username)
-      
-      console.log('JWT Token : ', data.token);
-      console.log('마지막 로그인:', data.lastLoginAt);
-      navigate('/dashboard'); //로그인 이후 대시보드 페이지로 이동
-    } else {
-      alert(data.message);
+    try {
+      const response = await fetch("http://localhost:8080/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          username: userId,
+          password: password,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        alert(`${data.username}님, 로그인 성공! 🎉`);
+
+        // ✅ rememberMe에 따라 저장 위치 선택
+        const storage = rememberMe ? localStorage : sessionStorage;
+
+        storage.setItem("token", data.token);
+        storage.setItem("username", data.username);
+
+        // 만약 기존에 다른 storage에 남아있을 수 있으니 반대쪽도 정리(선택 but 추천)
+        const otherStorage = rememberMe ? sessionStorage : localStorage;
+        otherStorage.removeItem("token");
+        otherStorage.removeItem("username");
+
+        console.log("JWT Token : ", data.token);
+        console.log("마지막 로그인:", data.lastLoginAt);
+
+        navigate("/dashboard");
+      } else {
+        alert(data.message || "로그인 실패");
+      }
+    } catch (error) {
+      console.error("로그인 에러:", error);
+      alert("서버와 통신 중 오류가 발생했습니다.");
     }
-  } catch (error) {
-    console.error('로그인 에러:', error);
-    alert("서버와 통신 중 오류가 발생했습니다.");
-  }
-};
-
+  };
 
   return (
     <div style={styles.container}>
@@ -49,16 +60,36 @@ function Login() {
         <div style={styles.circle1}></div>
         <div style={styles.circle2}></div>
       </div>
-      
+
       <div style={styles.card}>
         <div style={styles.header}>
           <div style={styles.iconContainer}>
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M13 2L3 14h8l-1 8 10-12h-8l1-8z" fill="url(#gradient)" stroke="url(#gradient)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            <svg
+              width="48"
+              height="48"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M13 2L3 14h8l-1 8 10-12h-8l1-8z"
+                fill="url(#gradient)"
+                stroke="url(#gradient)"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
               <defs>
-                <linearGradient id="gradient" x1="3" y1="2" x2="21" y2="22" gradientUnits="userSpaceOnUse">
-                  <stop stopColor="#10b981"/>
-                  <stop offset="1" stopColor="#3b82f6"/>
+                <linearGradient
+                  id="gradient"
+                  x1="3"
+                  y1="2"
+                  x2="21"
+                  y2="22"
+                  gradientUnits="userSpaceOnUse"
+                >
+                  <stop stopColor="#10b981" />
+                  <stop offset="1" stopColor="#3b82f6" />
                 </linearGradient>
               </defs>
             </svg>
@@ -73,9 +104,30 @@ function Login() {
               <span>아이디</span>
             </label>
             <div style={styles.inputWrapper}>
-              <svg style={styles.inputIcon} width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                <circle cx="12" cy="7" r="4" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <svg
+                style={styles.inputIcon}
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"
+                  stroke="#94a3b8"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <circle
+                  cx="12"
+                  cy="7"
+                  r="4"
+                  stroke="#94a3b8"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
               </svg>
               <input
                 type="text"
@@ -93,9 +145,33 @@ function Login() {
               <span>비밀번호</span>
             </label>
             <div style={styles.inputWrapper}>
-              <svg style={styles.inputIcon} width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                <path d="M7 11V7a5 5 0 0 1 10 0v4" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <svg
+                style={styles.inputIcon}
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <rect
+                  x="3"
+                  y="11"
+                  width="18"
+                  height="11"
+                  rx="2"
+                  ry="2"
+                  stroke="#94a3b8"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M7 11V7a5 5 0 0 1 10 0v4"
+                  stroke="#94a3b8"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
               </svg>
               <input
                 type="password"
@@ -110,16 +186,35 @@ function Login() {
 
           <div style={styles.rememberForgot}>
             <label style={styles.checkboxLabel}>
-              <input type="checkbox" style={styles.checkbox} />
+              <input
+                type="checkbox"
+                style={styles.checkbox}
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+              />
               <span style={styles.checkboxText}>로그인 상태 유지</span>
             </label>
-            <a href="#" style={styles.forgotLink}>비밀번호 찾기</a>
+            <a href="#" style={styles.forgotLink}>
+              비밀번호 찾기
+            </a>
           </div>
 
           <button type="submit" style={styles.button} className="login-button">
             <span>로그인</span>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"
+                stroke="white"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
             </svg>
           </button>
         </form>
@@ -158,6 +253,7 @@ function Login() {
   );
 }
 
+// styles는 너 원본 그대로 사용하면 됨
 const styles = {
   container: {
     minHeight: "100vh",

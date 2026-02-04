@@ -70,14 +70,31 @@
   box-sizing: border-box;
 }
 
+/* ✅ 추가: input focus 효과 */
+.mp-input:focus {
+  border-color: #10b981;
+  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.15);
+}
+
 .mp-readonly {
   background: #f8fafc;
   color: #94a3b8;
 }
 
+/* ✅ 추가(선택): readOnly input이 길 때 보기 좋게 */
+.mp-input.mp-readonly {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .mp-addressInputGroup {
   display: flex;
   gap: 12px;
+}
+
+/* ✅ 추가: 주소 input이 flex에서 넓게 차지하도록 */
+.mp-addressInputGroup .mp-input {
+  flex: 1;
 }
 
 .mp-searchBtn {
@@ -90,6 +107,7 @@
   border-radius: 12px;
   cursor: pointer;
   white-space: nowrap;
+  transition: all 0.2s;
 }
 
 .mp-sectionSaveBtn {
@@ -102,6 +120,7 @@
   border: none;
   border-radius: 12px;
   cursor: pointer;
+  transition: all 0.2s;
 }
 
 .mp-inlineBtn {
@@ -114,6 +133,21 @@
   border: none;
   border-radius: 12px;
   cursor: pointer;
+  transition: all 0.2s;
+}
+
+/* ✅ 추가: 버튼 hover/active 클릭감 */
+.mp-searchBtn:hover,
+.mp-sectionSaveBtn:hover,
+.mp-inlineBtn:hover {
+  transform: translateY(-1px);
+}
+
+.mp-searchBtn:active,
+.mp-sectionSaveBtn:active,
+.mp-inlineBtn:active {
+  transform: translateY(0px);
+  opacity: 0.95;
 }
 
 /* ✅ (선택) 모바일에서 주소 입력 줄바꿈 */

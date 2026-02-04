@@ -1,0 +1,224 @@
+.page {
+  padding: 32px;
+}
+
+.header {
+  margin-bottom: 24px;
+}
+
+.headerTitle {
+  font-size: 32px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 8px 0;
+}
+
+.headerSubtitle {
+  font-size: 16px;
+  color: #64748b;
+  margin: 0;
+}
+
+.autoRefreshMsg {
+  margin-top: 8px;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.summaryGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.summaryCard {
+  background: white;
+  border-radius: 16px;
+  border: 2px solid #e2e8f0;
+  padding: 18px;
+}
+
+.summaryLabel {
+  font-size: 13px;
+  font-weight: 800;
+  color: #64748b;
+}
+
+.summaryValue {
+  font-size: 26px;
+  font-weight: 900;
+  color: #0f172a;
+  margin-top: 6px;
+}
+
+.card {
+  background: white;
+  border-radius: 16px;
+  border: 2px solid #e2e8f0;
+  padding: 20px;
+}
+
+.cardTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.cardTitle {
+  font-size: 18px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0;
+}
+
+.refreshBtn {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 2px solid #e2e8f0;
+  background: white;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.muted {
+  color: #64748b;
+}
+
+.error {
+  color: #ef4444;
+  margin-top: 8px;
+}
+
+.empty {
+  color: #94a3b8;
+  padding: 14px 0;
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 860px;
+}
+
+.th {
+  text-align: left;
+  padding: 12px 10px;
+  font-size: 12px;
+  color: #64748b;
+  border-bottom: 1px solid #e2e8f0;
+  font-weight: 900;
+  letter-spacing: 0.4px;
+  white-space: nowrap;
+}
+
+.thRight {
+  text-align: right;
+}
+
+.tr {
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.td {
+  padding: 12px 10px;
+  font-size: 14px;
+  color: #0f172a;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.tdRight {
+  text-align: right;
+  font-weight: 800;
+}
+
+/* badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  border: 1px solid #e2e8f0;
+  letter-spacing: 0.2px;
+}
+
+.badgeBuy {
+  background: rgba(59, 130, 246, 0.1);
+  color: #2563eb;
+}
+
+.badgeSell {
+  background: rgba(16, 185, 129, 0.1);
+  color: #059669;
+}
+
+/* status pills */
+.statusPill {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+  border: 1px solid #e2e8f0;
+}
+
+.statusActive {
+  background: rgba(16, 185, 129, 0.1);
+  color: #059669;
+}
+
+.statusMatched {
+  background: rgba(59, 130, 246, 0.1);
+  color: #2563eb;
+}
+
+.statusRunning {
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+}
+
+.statusCompleted {
+  background: rgba(139, 92, 246, 0.1);
+  color: #7c3aed;
+}
+
+.statusExpired {
+  background: rgba(148, 163, 184, 0.12);
+  color: #64748b;
+}
+
+/* cancel button */
+.cancelBtn {
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 2px solid #e2e8f0;
+  background: white;
+  font-weight: 900;
+}
+
+.cancelBtnEnabled {
+  cursor: pointer;
+  opacity: 1;
+}
+
+.cancelBtnDisabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.hint {
+  margin-top: 10px;
+  color: #94a3b8;
+  font-size: 12px;
+}

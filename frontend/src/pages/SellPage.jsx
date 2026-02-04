@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from "react";
 import Layout from "../components/Layout";
-import { getMarket } from "../web3/market"; // ✅ 추가: 온체인 호출
+import { getMarket } from "../web3/market";
 import "./SellPage.css";
 
-const API_BASE = "http://localhost:8080"; // ✅ (선택) 최소 종료시간 계산용 백엔드
+const API_BASE = "http://localhost:8080";
 
 export default function SellPage() {
   const [amount, setAmount] = useState("");
@@ -11,13 +11,12 @@ export default function SellPage() {
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
 
-  // ✅ 최소 종료시간 표시용
   const [minEndTime, setMinEndTime] = useState("");
   const [minEndMsg, setMinEndMsg] = useState("");
 
-  // =========================================
-  // ✅ [유지] 최소 종료시간(minEndTime) 조회 (백엔드)
-  // =========================================
+  // =========================
+  // 최소 종료시간 조회(백엔드)
+  // =========================
   useEffect(() => {
     async function fetchMinEndTime() {
       setMinEndMsg("");
@@ -34,7 +33,9 @@ export default function SellPage() {
           amountKwh: String(amountNum),
         });
 
-        const res = await fetch(`${API_BASE}/orders/min-end-time?${qs.toString()}`);
+        const res = await fetch(
+          `${API_BASE}/orders/min-end-time?${qs.toString()}`
+        );
         const txt = await res.text();
 
         if (!res.ok) {
@@ -71,12 +72,11 @@ export default function SellPage() {
     setEndTime(v);
   }
 
-  // =========================================
-  // ✅ 온체인 SELL 주문 등록
-  // - side = 1 (SELL)
-  // - fund()로 PoC 가상 kWh 충전(부족하면 자동 충전)
-  // - createOrder() 트랜잭션 전송
-  // =========================================
+  // =========================
+  // 온체인 SELL 주문 등록
+  // - bucket 미등록이면 막기 ✅
+  // - SELL은 가중치 없음(0/0/0 전송) ✅
+  // =========================
   async function submitSellOrder() {
     try {
       if (!amount || !price || !startTime || !endTime) {
@@ -89,7 +89,6 @@ export default function SellPage() {
         return;
       }
 
-      // 컨트랙트는 uint256이라 PoC에서는 정수로 처리 권장
       const amountInt = Math.floor(Number(amount));
       const priceInt = Math.floor(Number(price));
 
@@ -102,7 +101,6 @@ export default function SellPage() {
         return;
       }
 
-      // datetime-local -> unix seconds
       const startSec = Math.floor(new Date(startTime).getTime() / 1000);
       const endSec = Math.floor(new Date(endTime).getTime() / 1000);
       const nowSec = Math.floor(Date.now() / 1000);
@@ -120,52 +118,76 @@ export default function SellPage() {
         return;
       }
 
-      const market = await getMarket();
-
-      // signer 주소
-      const addr =
-        market?.runner?.getAddress ? await market.runner.getAddress() : null;
-
-      const needKwh = BigInt(amountInt);
-
-      // 현재 가상 kWh 잔고/잠금 조회해서 부족하면 자동 fund
-      if (addr) {
-        const bal = await market.kwhBalance(addr); // bigint
-        const locked = await market.kwhLocked(addr); // bigint
-        const available = bal - locked;
-
-        if (available < needKwh) {
-          const add = needKwh - available;
-          // PoC: 부족분만큼 자동 충전
-          const txFund = await market.fund(0, add);
-          await txFund.wait();
-        }
-      } else {
-        // 주소 못 가져오면 그냥 필요량만큼 충전(최후수단)
-        const txFund = await market.fund(0, needKwh);
-        await txFund.wait();
+      const username = localStorage.getItem("username");
+      if (!username) {
+        alert("로그인이 필요합니다.");
+        return;
       }
 
-      // SELL=1
+      const market = await getMarket(username);
+
+      const addr = market?.runner?.getAddress
+        ? await market.runner.getAddress()
+        : null;
+      if (!addr) {
+        alert("지갑 주소를 가져올 수 없습니다. (embedded wallet 확인)");
+        return;
+      }
+
+      // ✅ bucket 확인
+      const myBucket = await market.bucketOf(addr);
+      if (myBucket === 0n) {
+        alert(
+          "❌ Bucket ID가 등록되어 있지 않습니다.\n" +
+            "👉 MyPage에서 '주소 저장(DB + Bucket 온체인)'을 먼저 해주세요."
+        );
+        return;
+      }
+
+      // ✅ kWh available 체크
+      const needKwh = BigInt(amountInt);
+      const bal = await market.kwhBalance(addr);
+      const lockedBefore = await market.kwhLocked(addr);
+      const available = bal - lockedBefore;
+
+      if (available < needKwh) {
+        alert(
+          `kWh 잔고 부족!\n` +
+            `필요: ${needKwh.toString()} / 가능: ${available.toString()}\n` +
+            `👉 MyPage에서 kWh를 먼저 충전해줘.`
+        );
+        return;
+      }
+
+      // ✅ SELL=1 createOrder(8 params)
+      // ✅ SELL은 가중치 의미 없으니 0/0/0 (컨트랙트가 내부에서 0으로 고정)
       const tx = await market.createOrder(
         1,
         BigInt(amountInt),
         BigInt(priceInt),
         BigInt(startSec),
-        BigInt(endSec)
+        BigInt(endSec),
+        0n,
+        0n,
+        0n
       );
 
       const receipt = await tx.wait();
 
-      // 주문 id는 nextOrderId() - 1 로 추정(트랜잭션 완료 후)
       const nextId = await market.nextOrderId();
       const createdId = (BigInt(nextId) - 1n).toString();
 
+      const lockedAfter = await market.kwhLocked(addr);
+      const lockedDiff = lockedAfter - lockedBefore;
+
       alert(
-        `✅ 온체인 판매 주문 등록 완료!\n주문ID: ${createdId}\nTx: ${receipt?.hash || tx.hash}`
+        `✅ 온체인 판매 주문 등록 완료!\n` +
+          `내 Bucket: ${myBucket.toString()}\n` +
+          `주문ID: ${createdId}\n` +
+          `잠금 증가(kWh): ${lockedDiff.toString()}\n` +
+          `Tx: ${receipt?.hash || tx.hash}`
       );
 
-      // 폼 리셋
       setAmount("");
       setPrice("");
       setStartTime("");
@@ -192,7 +214,7 @@ export default function SellPage() {
               <p className="sp-subtitle">필요한 에너지를 원하는 가격과 시간에 판매하세요</p>
               <p className="sp-note">
                 ※ PoC: 주문 등록은 <b>온체인(createOrder)</b>으로 처리됩니다.
-                (최소종료시간은 화면 편의용)
+                (SELL은 가중치 없음 / BUY 기준 매칭)
               </p>
             </div>
           </div>
@@ -315,7 +337,7 @@ export default function SellPage() {
             </button>
 
             <div className="sp-notice">
-              💡 PoC: 주문은 블록체인에 기록됩니다. (메타마스크 서명 필요)
+              💡 PoC: 주문은 블록체인에 기록됩니다. (SELL은 가중치 없이 등록)
             </div>
           </div>
         </div>

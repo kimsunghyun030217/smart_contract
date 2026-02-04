@@ -1,9 +1,39 @@
 import React, { useMemo, useState, useEffect } from "react";
 import Layout from "../components/Layout";
-import { getMarket } from "../web3/market"; // ✅ 추가: 온체인 호출
+import { getMarket } from "../web3/market";
 import "./BuyPage.css";
 
-const API_BASE = "http://localhost:8080"; // ✅ (선택) 최소 종료시간 계산용 백엔드
+const API_BASE = "http://localhost:8080";
+
+// ✅ weight(0~1) -> BPS(0~10000), 합 10000 보장
+function weightsToBps(weights) {
+  const p = Math.max(0, Math.min(1, Number(weights?.price ?? 0)));
+  const d = Math.max(0, Math.min(1, Number(weights?.distance ?? 0)));
+  const t = Math.max(0, Math.min(1, Number(weights?.trust ?? 0)));
+
+  const sum = p + d + t;
+  if (sum <= 0) return { wPriceBps: 6000, wDistBps: 3000, wTrustBps: 1000 };
+
+  const np = p / sum;
+  const nd = d / sum;
+  const nt = t / sum;
+
+  // 2개를 반올림하고 마지막은 보정해서 "정확히 10000"
+  let wPriceBps = Math.round(np * 10000);
+  let wDistBps = Math.round(nd * 10000);
+  let wTrustBps = 10000 - wPriceBps - wDistBps;
+
+  // 혹시라도 음수 나오면 재분배(극단 케이스)
+  if (wTrustBps < 0) {
+    wTrustBps = 0;
+    const remain = 10000;
+    const total = wPriceBps + wDistBps || 1;
+    wPriceBps = Math.round((wPriceBps / total) * remain);
+    wDistBps = remain - wPriceBps;
+  }
+
+  return { wPriceBps, wDistBps, wTrustBps };
+}
 
 export default function BuyPage() {
   const [amount, setAmount] = useState("");
@@ -11,11 +41,10 @@ export default function BuyPage() {
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
 
-  // ✅ 최소 종료시간 표시용
   const [minEndTime, setMinEndTime] = useState("");
   const [minEndMsg, setMinEndMsg] = useState("");
 
-  // ✅ 추가: 가중치(0~1). 합은 자동으로 1 되게 정규화
+  // ✅ UI 가중치(0~1)
   const [weights, setWeights] = useState({
     price: 0.6,
     distance: 0.3,
@@ -55,9 +84,9 @@ export default function BuyPage() {
     return `가격 ${p}% · 거리 ${d}% · 신뢰 ${t}%`;
   }, [weights]);
 
-  // =========================================
-  // ✅ 최소 종료시간(minEndTime) 조회 (백엔드)
-  // =========================================
+  // =========================
+  // 최소 종료시간 조회(백엔드)
+  // =========================
   useEffect(() => {
     async function fetchMinEndTime() {
       setMinEndMsg("");
@@ -74,7 +103,9 @@ export default function BuyPage() {
           amountKwh: String(amountNum),
         });
 
-        const res = await fetch(`${API_BASE}/orders/min-end-time?${qs.toString()}`);
+        const res = await fetch(
+          `${API_BASE}/orders/min-end-time?${qs.toString()}`
+        );
         const txt = await res.text();
 
         if (!res.ok) {
@@ -111,12 +142,11 @@ export default function BuyPage() {
     setEndTime(v);
   }
 
-  // =========================================
-  // ✅ 온체인 BUY 주문 등록
-  // - side = 0 (BUY)
-  // - fund()로 PoC 가상 KRW 충전(부족하면 자동 충전)
-  // - createOrder() 트랜잭션 전송
-  // =========================================
+  // =========================
+  // 온체인 BUY 주문 등록
+  // - bucket 미등록이면 막기 ✅
+  // - createOrder(8 params) ✅
+  // =========================
   async function submitBuyOrder() {
     try {
       if (!amount || !price || !startTime || !endTime) {
@@ -129,7 +159,6 @@ export default function BuyPage() {
         return;
       }
 
-      // 컨트랙트는 uint256이라 PoC에서는 정수로만 처리 권장
       const amountInt = Math.floor(Number(amount));
       const priceInt = Math.floor(Number(price));
 
@@ -142,7 +171,6 @@ export default function BuyPage() {
         return;
       }
 
-      // datetime-local -> unix seconds
       const startSec = Math.floor(new Date(startTime).getTime() / 1000);
       const endSec = Math.floor(new Date(endTime).getTime() / 1000);
       const nowSec = Math.floor(Date.now() / 1000);
@@ -160,55 +188,81 @@ export default function BuyPage() {
         return;
       }
 
-      const market = await getMarket();
-
-      // signer 주소
-      const addr =
-        market?.runner?.getAddress ? await market.runner.getAddress() : null;
-
-      // 비용 = amount * price
-      const cost = BigInt(amountInt) * BigInt(priceInt);
-
-      // 현재 가상 KRW 잔고/잠금 조회해서 부족하면 자동 fund
-      if (addr) {
-        const bal = await market.krwBalance(addr); // bigint
-        const locked = await market.krwLocked(addr); // bigint
-        const available = bal - locked;
-
-        if (available < cost) {
-          const need = cost - available;
-          // PoC: 부족분만큼 자동 충전
-          const txFund = await market.fund(need, 0);
-          await txFund.wait();
-        }
-      } else {
-        // 주소 못 가져오면 그냥 넉넉히 충전(최후수단)
-        const txFund = await market.fund(cost, 0);
-        await txFund.wait();
+      const username = localStorage.getItem("username");
+      if (!username) {
+        alert("로그인이 필요합니다.");
+        return;
       }
 
-      // BUY=0
+      const market = await getMarket(username);
+
+      const addr = market?.runner?.getAddress
+        ? await market.runner.getAddress()
+        : null;
+      if (!addr) {
+        alert("지갑 주소를 가져올 수 없습니다. (embedded wallet 확인)");
+        return;
+      }
+
+      // ✅ bucket 등록 여부 확인
+      const myBucket = await market.bucketOf(addr);
+      if (myBucket === 0n) {
+        alert(
+          "❌ Bucket ID가 등록되어 있지 않습니다.\n" +
+            "👉 MyPage에서 '주소 저장(DB + Bucket 온체인)'을 먼저 해주세요."
+        );
+        return;
+      }
+
+      // ✅ KRW available 체크
+      const cost = BigInt(amountInt) * BigInt(priceInt);
+      const bal = await market.krwBalance(addr);
+      const lockedBefore = await market.krwLocked(addr);
+      const available = bal - lockedBefore;
+
+      if (available < cost) {
+        alert(
+          `KRW 잔고 부족!\n` +
+            `필요: ${cost.toString()} / 가능: ${available.toString()}\n` +
+            `👉 MyPage에서 KRW를 먼저 충전해줘.`
+        );
+        return;
+      }
+
+      // ✅ weights -> BPS (sum=10000)
+      const { wPriceBps, wDistBps, wTrustBps } = weightsToBps(weights);
+
+      // ✅ BUY=0 createOrder(8 params)
+      // ⚠️ uint16도 BigInt로 보내면 안전(ethers v6)
       const tx = await market.createOrder(
         0,
         BigInt(amountInt),
         BigInt(priceInt),
         BigInt(startSec),
-        BigInt(endSec)
+        BigInt(endSec),
+        BigInt(wPriceBps),
+        BigInt(wDistBps),
+        BigInt(wTrustBps)
       );
 
       const receipt = await tx.wait();
 
-      // 주문 id는 nextOrderId() - 1 로 추정(트랜잭션 완료 후)
       const nextId = await market.nextOrderId();
       const createdId = (BigInt(nextId) - 1n).toString();
 
+      const lockedAfter = await market.krwLocked(addr);
+      const lockedDiff = lockedAfter - lockedBefore;
+
       alert(
-        `✅ 온체인 구매 주문 등록 완료!\n주문ID: ${createdId}\nTx: ${
-          receipt?.hash || tx.hash
-        }`
+        `✅ 온체인 구매 주문 등록 완료!\n` +
+          `내 Bucket: ${myBucket.toString()}\n` +
+          `주문ID: ${createdId}\n` +
+          `가중치(BPS): P${wPriceBps}/D${wDistBps}/T${wTrustBps}\n` +
+          `잠금 증가(KRW): ${lockedDiff.toString()}\n` +
+          `Tx: ${receipt?.hash || tx.hash}`
       );
 
-      // 폼 리셋
+      // reset
       setAmount("");
       setPrice("");
       setStartTime("");
@@ -218,8 +272,6 @@ export default function BuyPage() {
       setWeights(presets.balanced);
     } catch (e) {
       console.error(e);
-
-      // 메타마스크 거절/리버트 메시지 간단 처리
       const msg = e?.shortMessage || e?.reason || e?.message || "알 수 없는 오류";
       alert("❌ 온체인 주문 등록 실패!\n" + msg);
     }
@@ -228,7 +280,6 @@ export default function BuyPage() {
   return (
     <Layout>
       <div className="bp-container">
-        {/* 헤더 섹션 */}
         <div className="bp-header">
           <div className="bp-headerContent">
             <div className="bp-iconWrapper">
@@ -239,20 +290,18 @@ export default function BuyPage() {
               <p className="bp-subtitle">필요한 에너지를 원하는 가격과 시간에 구매하세요</p>
               <p className="bp-note">
                 ※ PoC: 주문 등록은 <b>온체인(createOrder)</b>으로 처리됩니다.
-                (가중치/최소종료시간은 화면 편의용)
+                (BUY는 가중치가 온체인에 저장)
               </p>
             </div>
           </div>
         </div>
 
-        {/* 구매 카드 */}
         <div className="bp-cardWrapper">
           <div className="bp-card">
             <div className="bp-cardHeader">
               <h2 className="bp-cardTitle">구매 정보 입력</h2>
             </div>
 
-            {/* 수량 & 가격 그리드 */}
             <div className="bp-formGrid">
               <div className="bp-inputGroup">
                 <label className="bp-label">
@@ -289,7 +338,6 @@ export default function BuyPage() {
               </div>
             </div>
 
-            {/* 시간 범위 */}
             <div className="bp-timeSection">
               <label className="bp-label">
                 <span className="bp-labelIcon">⏰</span>
@@ -335,7 +383,6 @@ export default function BuyPage() {
               )}
             </div>
 
-            {/* ✅ 매칭 가중치 카드 (PoC에서는 온체인 저장 안 함) */}
             <div className="bp-weightCard">
               <div className="bp-weightTop">
                 <div className="bp-weightTitle">매칭 기준 설정</div>
@@ -386,9 +433,7 @@ export default function BuyPage() {
                     onChange={(e) => setWeight("price", Number(e.target.value))}
                     className="bp-range"
                   />
-                  <div className="bp-weightHint">
-                    가격이 유리한 상대를 더 우선 매칭
-                  </div>
+                  <div className="bp-weightHint">가격이 유리한 상대를 더 우선 매칭</div>
                 </div>
 
                 <div className="bp-weightItem">
@@ -409,9 +454,7 @@ export default function BuyPage() {
                     }
                     className="bp-range"
                   />
-                  <div className="bp-weightHint">
-                    가까운 상대를 더 우선 매칭
-                  </div>
+                  <div className="bp-weightHint">가까운 상대를 더 우선 매칭</div>
                 </div>
 
                 <div className="bp-weightItem">
@@ -430,19 +473,15 @@ export default function BuyPage() {
                     onChange={(e) => setWeight("trust", Number(e.target.value))}
                     className="bp-range"
                   />
-                  <div className="bp-weightHint">
-                    신뢰도 높은 상대를 더 우선 매칭
-                  </div>
+                  <div className="bp-weightHint">신뢰도 높은 상대를 더 우선 매칭</div>
                 </div>
               </div>
 
               <div className="bp-weightFootnote">
-                합계는 자동으로 100%로 맞춰져요. (PoC: 이 값은 온체인에 저장되지
-                않아요)
+                합계는 자동으로 100%로 맞춰져요. (BUY는 가중치가 온체인에 저장돼요)
               </div>
             </div>
 
-            {/* 예상 금액 카드 */}
             {amount && price && (
               <div className="bp-estimateCard">
                 <div className="bp-estimateRow">
@@ -467,14 +506,13 @@ export default function BuyPage() {
               </div>
             )}
 
-            {/* ✅ 버튼: 백엔드 POST 대신 온체인 트랜잭션 */}
             <button className="bp-primaryBtn" onClick={submitBuyOrder}>
               <span className="bp-btnIcon">✓</span>
               구매 주문 등록하기 (온체인)
             </button>
 
             <div className="bp-notice">
-              💡 PoC: 주문은 블록체인에 기록됩니다. (메타마스크 서명 필요)
+              💡 PoC: 주문은 블록체인에 기록됩니다. (내장지갑이 자동 서명/전송)
             </div>
           </div>
         </div>
