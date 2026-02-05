@@ -4,7 +4,7 @@ import Layout from "../components/Layout";
 import "./OrdersPage.css";
 
 import { getMarket } from "../web3/market";
-import { createEmbeddedWalletIfMissing, getEmbeddedAddress } from "../web3/embeddedWallet";
+import { createEmbeddedWalletIfMissing } from "../web3/embeddedWallet";
 
 const STATUS_LABEL = {
   0: "대기",
@@ -26,6 +26,21 @@ export default function OrdersPage() {
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(true);
 
+  // ✅ 무조건 KST로 표시 (PC 타임존 상관없이 Asia/Seoul 고정)
+  const fmtKST = (sec) => {
+    if (!sec) return "-";
+    const d = new Date(Number(sec) * 1000);
+    return new Intl.DateTimeFormat("sv-SE", {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(d);
+  };
+
   async function load({ silent = false } = {}) {
     const username = localStorage.getItem("username");
     const token = localStorage.getItem("token");
@@ -34,7 +49,6 @@ export default function OrdersPage() {
       setErr("");
       if (!silent) setLoading(true);
 
-      // ✅ 로그인 체크
       if (!username || !token) {
         setOrders([]);
         setErr("로그인이 필요합니다.");
@@ -42,18 +56,10 @@ export default function OrdersPage() {
         return;
       }
 
-      // ✅ 내장지갑 없으면 생성(없을 때만)
       createEmbeddedWalletIfMissing(username);
 
-      // ✅ 반드시 username을 넣어서 market 가져오기
       const market = await getMarket(username);
-
-      // ✅ 내 주소: (1) embeddedWallet에서 가져오거나
-      // const myAddr = (getEmbeddedAddress(username) || "").toLowerCase();
-
-      // ✅ 더 안전: 실제 signer 주소를 컨트랙트에서 가져오기 (추천)
       const myAddr = (await market.runner.getAddress()).toLowerCase();
-
       if (!myAddr) throw new Error("내장지갑 주소를 찾을 수 없습니다.");
 
       const nextId = await market.nextOrderId(); // bigint
@@ -65,6 +71,7 @@ export default function OrdersPage() {
       }
 
       const list = [];
+
       for (let id = 1; id <= maxId; id++) {
         const o = await market.orders(BigInt(id));
 
@@ -83,8 +90,32 @@ export default function OrdersPage() {
         const startSec = Number(o.startTime);
         const endSec = Number(o.endTime);
 
-        const fmt = (sec) =>
-          new Date(sec * 1000).toISOString().slice(0, 16).replace("T", " ");
+        // ✅ 체결 정보(있으면) 채우기
+        let tradeId = null;
+        let executedPricePerKwh = null;
+        let executedAmountKwh = null;
+        let deliveryStart = null;
+        let deliveryEnd = null;
+
+        if (statusNum === 2 || statusNum === 3) {
+          try {
+            const tid = await market.orderToTradeId(BigInt(oid));
+            const tidNum = Number(tid);
+
+            if (tidNum > 0) {
+              tradeId = tidNum;
+
+              const t = await market.trades(BigInt(tidNum));
+              executedPricePerKwh = Number(t.pricePerKwh);
+              executedAmountKwh = Number(t.amountKwh);
+
+              deliveryStart = fmtKST(Number(t.deliveryStart));
+              deliveryEnd = fmtKST(Number(t.deliveryEnd));
+            }
+          } catch (e) {
+            console.warn("trade info load failed:", e?.shortMessage || e?.message || e);
+          }
+        }
 
         list.push({
           id: oid,
@@ -92,10 +123,16 @@ export default function OrdersPage() {
           orderType: SIDE_LABEL[sideNum] || "buy",
           amountKwh,
           pricePerKwh,
-          startTime: fmt(startSec),
-          endTime: fmt(endSec),
+          startTime: fmtKST(startSec),
+          endTime: fmtKST(endSec),
           status: statusNum,
           createdAt: "-",
+
+          tradeId,
+          executedPricePerKwh,
+          executedAmountKwh,
+          deliveryStart,
+          deliveryEnd,
         });
       }
 
@@ -134,15 +171,12 @@ export default function OrdersPage() {
 
   useEffect(() => {
     load();
-
-    const timer = setInterval(() => {
-      load({ silent: true });
-    }, 30_000);
-
+    const timer = setInterval(() => load({ silent: true }), 30_000);
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ✅ 완료(3) 숨김 유지
   const visibleOrders = useMemo(() => {
     return orders.filter((o) => Number(o.status) !== 3);
   }, [orders]);
@@ -226,10 +260,18 @@ export default function OrdersPage() {
                   <tr>
                     <th className="th">구분</th>
                     <th className="th thRight">수량(kWh)</th>
-                    <th className="th thRight">가격(₩/kWh)</th>
+                    <th className="th thRight">내가 건 가격</th>
                     <th className="th">시작</th>
                     <th className="th">종료</th>
                     <th className="th">상태</th>
+
+                    {/* ✅ 유지: 체결 정보 */}
+                    <th className="th thRight">체결가</th>
+                    <th className="th thRight">체결수량</th>
+
+                    {/* ✅ Trade 컬럼 제거, 배송시간만 유지 */}
+                    <th className="th">배송시간</th>
+
                     <th className="th">등록일</th>
                     <th className="th">취소</th>
                   </tr>
@@ -238,6 +280,7 @@ export default function OrdersPage() {
                 <tbody>
                   {visibleOrders.map((o) => {
                     const canCancel = isCancelable(o);
+                    const hasTrade = !!o.tradeId;
 
                     return (
                       <tr key={o.id} className="tr">
@@ -247,6 +290,18 @@ export default function OrdersPage() {
                         <td className="td">{o.startTime}</td>
                         <td className="td">{o.endTime}</td>
                         <td className="td">{statusPill(o.status)}</td>
+
+                        {/* ✅ 체결 정보 */}
+                        <td className="td tdRight">{hasTrade ? o.executedPricePerKwh : "-"}</td>
+                        <td className="td tdRight">{hasTrade ? o.executedAmountKwh : "-"}</td>
+
+                        {/* ✅ 배송시간 */}
+                        <td className="td">
+                          {hasTrade && o.deliveryStart
+                            ? `${o.deliveryStart} ~ ${o.deliveryEnd}`
+                            : "-"}
+                        </td>
+
                         <td className="td">{o.createdAt}</td>
 
                         <td className="td">

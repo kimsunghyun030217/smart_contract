@@ -1,5 +1,7 @@
 import { useState } from "react";
 import Sidebar from "./Sidebar";
+import AutoMatcher from "./AutoMatcher";   // ✅ 이미 있음
+import AutoSettler from "./AutoSettler";   // ✅ 추가
 
 export default function Layout({ children }) {
   const [open, setOpen] = useState(true);
@@ -8,10 +10,16 @@ export default function Layout({ children }) {
     <div
       style={{
         display: "flex",
-        height: "100vh",     // ✅ minHeight -> height
-        overflow: "hidden",  // ✅ body 스크롤 막기(끊김 해결 핵심)
+        height: "100vh",
+        overflow: "hidden",
       }}
     >
+      {/* ✅ 자동 매칭 엔진: 앱 켜져있는 동안 계속 돈다 */}
+      <AutoMatcher />
+
+      {/* ✅ 자동 정산 엔진: deliveryStart 지나면 settleTrade() 자동 호출 */}
+      <AutoSettler />
+
       {open && <Sidebar />}
 
       <div
@@ -19,7 +27,7 @@ export default function Layout({ children }) {
           flex: 1,
           background: "#f8fafc",
           padding: 24,
-          overflowY: "auto", // ✅ 오른쪽만 스크롤
+          overflowY: "auto",
         }}
       >
         <button
