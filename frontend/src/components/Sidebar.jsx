@@ -17,30 +17,27 @@ export default function Sidebar() {
     width: "100%",
     fontSize: "15px",
     fontWeight: 600,
-    marginBottom: "8px"
+    marginBottom: "8px",
   };
 
   const navItemActive = {
     background: "linear-gradient(135deg, #10b981 0%, #3b82f6 100%)",
-    color: "white"
+    color: "white",
   };
 
   const logoutBtn = {
     ...navItem,
-    marginTop: "auto",          // ✅ 맨 아래로 밀기
+    marginTop: "auto",
     marginBottom: 0,
-    color: "#fca5a5"
+    color: "#fca5a5",
   };
 
   const isActive = (path) => location.pathname === path;
 
   const handleLogout = () => {
-    // 1) 저장된 인증정보 정리 (프로젝트에 맞게 조정)
     localStorage.removeItem("token");
     localStorage.removeItem("refreshToken");
-    sessionStorage.clear(); // 필요 없으면 제거
-
-    // 2) 로그인 화면으로 이동
+    sessionStorage.clear();
     navigate("/login");
   };
 
@@ -53,7 +50,7 @@ export default function Sidebar() {
         color: "white",
         display: "flex",
         flexDirection: "column",
-        height: "100vh" // ✅ 화면 높이 기준으로 '아래 고정'이 안정적
+        height: "100vh",
       }}
     >
       <h2 style={{ marginBottom: "32px", fontSize: "22px", fontWeight: 800 }}>
@@ -110,7 +107,14 @@ export default function Sidebar() {
         마이페이지
       </button>
 
-      {/* ✅ 맨 아래 로그아웃 */}
+      {/* ✅ 추가: 온체인 기록 모니터 */}
+      <button
+        style={{ ...navItem, ...(isActive("/monitor") ? navItemActive : {}) }}
+        onClick={() => navigate("/monitor")}
+      >
+        온체인 모니터
+      </button>
+
       <button style={logoutBtn} onClick={handleLogout}>
         로그아웃
       </button>
