@@ -46,16 +46,11 @@ export default function AutoSettler() {
         const me = (await market.runner.getAddress()).toLowerCase();
         const nowSec = Math.floor(Date.now() / 1000);
 
-        console.log("⏱️ AutoSettler tick", { me, nowSec });
-
         // 컨트랙트에 nextTradeId 있음
         const nextTradeId = Number(await market.nextTradeId());
         const maxTid = nextTradeId - 1;
 
-        if (maxTid <= 0) {
-          console.log("ℹ️ AutoSettler: no trades yet");
-          return;
-        }
+        if (maxTid <= 0) return;
 
         const from = Math.max(1, maxTid - SCAN_LAST_N_TRADES + 1);
 
@@ -69,12 +64,10 @@ export default function AutoSettler() {
           let t;
           try {
             t = await market.trades(BigInt(tid));
-          } catch (e) {
-            // trade 구조가 없거나 조회 실패
+          } catch {
             continue;
           }
 
-          // ethers 구조체 대응 (named / array)
           const id = Number(t.id ?? t[0] ?? 0);
           if (!id) continue;
 
@@ -85,8 +78,7 @@ export default function AutoSettler() {
           const sellOrderId = Number(t.sellOrderId ?? t[2]);
           const deliveryStart = Number(t.deliveryStart ?? t[5]);
 
-          // 내 trade인지 확인: buyOrder / sellOrder maker 중 하나가 나인지
-          // (gas 아끼려면 여기에서 maker 체크를 생략하고 그냥 staticCall로만 걸러도 됨)
+          // 내 trade인지 확인
           let isMine = false;
           try {
             const buy = await market.orders(BigInt(buyOrderId));
@@ -95,53 +87,36 @@ export default function AutoSettler() {
             const sellMaker = String(sell.maker ?? sell[1] ?? "").toLowerCase();
             isMine = buyMaker === me || sellMaker === me;
           } catch {
-            // 조회 실패하면 그냥 넘어감
             continue;
           }
 
           if (!isMine) continue;
 
           // 아직 시작 시간이 안 됐으면 정산 불가
-          if (deliveryStart > nowSec) {
-            console.log("🕒 not time yet", { tid, deliveryStart, nowSec });
-            continue;
-          }
+          if (deliveryStart > nowSec) continue;
 
           // (A) 시뮬레이션: 정산 가능한지 확인
           let canSettle = true;
           try {
             await market.settleTrade.staticCall(BigInt(tid));
-          } catch (e) {
+          } catch {
             canSettle = false;
-            console.log("❌ settle staticCall fail", {
-              tid,
-              reason: e?.shortMessage || e?.reason || e?.message,
-            });
           }
           if (!canSettle) continue;
 
           // (B) 실제 정산 트랜잭션
           try {
-            console.log("🚀 settleTrade tx sending...", { tid });
             const tx = await market.settleTrade(BigInt(tid));
-            const receipt = await tx.wait();
-
-            console.log("✅ AutoSettler settled!", {
-              tid,
-              txHash: receipt?.hash || tx?.hash,
-            });
-
+            await tx.wait();
             settledCount++;
-          } catch (e) {
-            console.warn("⚠️ AutoSettler tx failed (race ok):", e?.shortMessage || e?.message || e);
+          } catch {
+            // race condition 등은 그냥 무시 (조용히)
           }
         }
 
-        if (settledCount === 0) {
-          console.log("ℹ️ AutoSettler: nothing to settle this tick");
-        }
-      } catch (e) {
-        console.error("❌ AutoSettler tick error:", e?.shortMessage || e?.message || e);
+        void settledCount;
+      } catch {
+        // 조용히
       } finally {
         inFlightRef.current = false;
       }
@@ -157,7 +132,6 @@ export default function AutoSettler() {
     };
   }, [enabled]);
 
-  // PoC 토글 UI (AutoMatcher랑 동일하게)
   return (
     <div style={{ position: "fixed", right: 12, bottom: 54, zIndex: 9999 }}>
       <label

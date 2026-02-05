@@ -5,30 +5,31 @@ import { ethers } from "ethers";
 import "./ChainMonitorPage.css";
 
 export default function ChainMonitorPage() {
-  const [err, setErr] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [에러, 에러설정] = useState("");
+  const [로딩중, 로딩중설정] = useState(true);
 
-  const [chainInfo, setChainInfo] = useState({
+  const [내것만보기, 내것만보기설정] = useState(false);
+
+  const [체인정보, 체인정보설정] = useState({
     rpc: "http://127.0.0.1:8545",
-    latestBlock: 0,
-    myAddress: "",
-    myEth: "",
-    contractAddress: "",
+    최신블록: 0,
+    내주소: "",
+    내이더: "",
+    컨트랙트주소: "",
   });
 
-  const [blocks, setBlocks] = useState([]); // [{ number, hash, timestamp, txs: [] }]
-  const [events, setEvents] = useState([]); // [{ blockNumber, txHash, name, args }]
-  const [orders, setOrders] = useState([]); // mapped orders
+  const [블록목록, 블록목록설정] = useState([]);
+  const [주문목록, 주문목록설정] = useState([]);
 
-  const POLL_MS = 1500;
-  const BLOCK_LOOKBACK = 8;
+  const 폴링간격MS = 1500;
+  const 블록조회개수 = 200;
 
-  const short = (v, n = 6) =>
-    typeof v === "string" && v.startsWith("0x")
-      ? `${v.slice(0, 2 + n)}…${v.slice(-4)}`
-      : String(v ?? "");
+  const 짧게 = (값, n = 6) =>
+    typeof 값 === "string" && 값.startsWith("0x")
+      ? `${값.slice(0, 2 + n)}…${값.slice(-4)}`
+      : String(값 ?? "");
 
-  function safeToString(x) {
+  function 안전문자열(x) {
     try {
       if (x == null) return "";
       if (typeof x === "bigint") return x.toString();
@@ -39,19 +40,18 @@ export default function ChainMonitorPage() {
     }
   }
 
-  const getTxHash = (tx) => (typeof tx === "string" ? tx : tx?.hash);
+  const 트랜잭션해시얻기 = (tx) => (typeof tx === "string" ? tx : tx?.hash);
 
-  // ethers parseLog args 정리
-  function normalizeArgs(args) {
+  function 인자정리(args) {
     const out = {};
     for (const k of Object.keys(args)) {
       if (/^\d+$/.test(k)) continue;
-      out[k] = safeToString(args[k]);
+      out[k] = 안전문자열(args[k]);
     }
     return out;
   }
 
-  function mapOrder(o, fallbackId) {
+  function 주문매핑(o, fallbackId) {
     const id = o?.id != null ? Number(o.id) : fallbackId;
 
     const maker = o?.maker ?? o?.[1] ?? "";
@@ -61,337 +61,424 @@ export default function ChainMonitorPage() {
     const startTime = o?.startTime ?? o?.[5] ?? "";
     const endTime = o?.endTime ?? o?.[6] ?? "";
     const status = o?.status ?? o?.[7] ?? "";
-    const w = o?.w ?? o?.wBps ?? o?.[8];
+
+    const wPriceBps = o?.wPriceBps ?? o?.[8];
+    const wDistBps = o?.wDistBps ?? o?.[9];
+    const wTrustBps = o?.wTrustBps ?? o?.[10];
+    const bucketId = o?.bucketId ?? o?.[11];
 
     return {
       id,
       maker: String(maker),
-      side: safeToString(side),
-      amountKwh: safeToString(amountKwh),
-      pricePerKwh: safeToString(pricePerKwh),
-      startTime: safeToString(startTime),
-      endTime: safeToString(endTime),
-      status: safeToString(status),
-      w: w != null ? safeToString(w) : "",
+      side: 안전문자열(side),
+      amountKwh: 안전문자열(amountKwh),
+      pricePerKwh: 안전문자열(pricePerKwh),
+      startTime: 안전문자열(startTime),
+      endTime: 안전문자열(endTime),
+      status: 안전문자열(status),
+      wPriceBps: wPriceBps != null ? 안전문자열(wPriceBps) : "",
+      wDistBps: wDistBps != null ? 안전문자열(wDistBps) : "",
+      wTrustBps: wTrustBps != null ? 안전문자열(wTrustBps) : "",
+      bucketId: bucketId != null ? 안전문자열(bucketId) : "",
     };
   }
 
-  async function loadAll({ silent = false } = {}) {
+  const 사이드라벨 = (v) => {
+    const n = Number(안전문자열(v));
+    if (Number.isNaN(n)) return String(v ?? "");
+    return n === 0 ? "구매" : n === 1 ? "판매" : String(v ?? "");
+  };
+
+  const 상태라벨 = (v) => {
+    const n = Number(안전문자열(v));
+    if (Number.isNaN(n)) return String(v ?? "");
+    if (n === 0) return "활성";
+    if (n === 1) return "취소";
+    if (n === 2) return "매칭";
+    if (n === 3) return "완료";
+    if (n === 4) return "만료";
+    return String(v ?? "");
+  };
+
+  const 주소같음 = (a, b) => {
+    if (!a || !b) return false;
     try {
-      setErr("");
-      if (!silent) setLoading(true);
+      return String(a).toLowerCase() === String(b).toLowerCase();
+    } catch {
+      return false;
+    }
+  };
 
-      // ✅ 마이페이지랑 똑같이 username 기반 signer로 Contract 만들기
+  function tx이벤트요약(receipt, 컨트랙트, 컨트랙트주소) {
+    try {
+      const logs = receipt?.logs || [];
+      const cAddr = (컨트랙트주소 || "").toLowerCase();
+
+      const out = [];
+      for (const lg of logs) {
+        if (!lg?.address) continue;
+        if (lg.address.toLowerCase() !== cAddr) continue;
+
+        try {
+          const parsed = 컨트랙트.interface.parseLog({
+            topics: lg.topics,
+            data: lg.data,
+          });
+          out.push({
+            name: parsed?.name || "이벤트",
+            args: parsed?.args ? 인자정리(parsed.args) : {},
+          });
+        } catch {
+          out.push({ name: "알수없는로그", args: {} });
+        }
+      }
+      return out;
+    } catch {
+      return [];
+    }
+  }
+
+  async function 모두불러오기({ 조용히 = false } = {}) {
+    try {
+      에러설정("");
+      if (!조용히) 로딩중설정(true);
+
       const username = localStorage.getItem("username") || "";
-      const contract = await getMarket(username);
-      const provider = contract.runner?.provider || contract.provider;
-      if (!provider) throw new Error("provider를 찾을 수 없어요. getMarket() 확인 필요");
+      const 컨트랙트 = await getMarket(username);
+      const 프로바이더 = 컨트랙트.runner?.provider || 컨트랙트.provider;
+      if (!프로바이더) throw new Error("프로바이더를 찾을 수 없어요. getMarket() 확인 필요");
 
-      const contractAddress = await contract.getAddress();
+      const 컨트랙트주소 = await 컨트랙트.getAddress();
 
-      const signer =
-        contract.runner && typeof contract.runner.getAddress === "function"
-          ? contract.runner
+      const 서명자 =
+        컨트랙트.runner && typeof 컨트랙트.runner.getAddress === "function"
+          ? 컨트랙트.runner
           : null;
 
-      const myAddress = signer ? await signer.getAddress() : "";
-      const latestBlock = await provider.getBlockNumber();
+      const 내주소 = 서명자 ? await 서명자.getAddress() : "";
+      const 최신블록 = await 프로바이더.getBlockNumber();
 
-      let myEth = "";
-      if (myAddress) {
-        const bal = await provider.getBalance(myAddress);
-        myEth = ethers.formatEther(bal); // ✅ ETH로 보기 좋게
+      let 내이더 = "";
+      if (내주소) {
+        const 잔고 = await 프로바이더.getBalance(내주소);
+        내이더 = ethers.formatEther(잔고);
       }
 
-      setChainInfo((prev) => ({
+      체인정보설정((prev) => ({
         ...prev,
-        latestBlock,
-        myAddress,
-        myEth,
-        contractAddress,
+        최신블록,
+        내주소,
+        내이더,
+        컨트랙트주소,
       }));
 
-      // 최근 블록 범위
-      const from = Math.max(0, latestBlock - (BLOCK_LOOKBACK - 1));
-      const blockNums = [];
-      for (let b = latestBlock; b >= from; b--) blockNums.push(b);
+      const from = Math.max(0, 최신블록 - (블록조회개수 - 1));
+      const 블록번호들 = [];
+      for (let b = 최신블록; b >= from; b--) 블록번호들.push(b);
 
-      const fetchedBlocks = [];
-      const fetchedEvents = [];
+      const 불러온블록들 = [];
 
-      for (const b of blockNums) {
-        const blk = await provider.getBlock(b, true);
+      for (const b of 블록번호들) {
+        const blk = await 프로바이더.getBlock(b, true);
         if (!blk) continue;
 
-        // tx 해시 목록 뽑기
         const txHashes = (blk.transactions || [])
-          .map(getTxHash)
+          .map(트랜잭션해시얻기)
           .filter(Boolean);
 
-        // ✅ receipt/tx 상세를 미리 가져와서 표를 꽉 채움 (가스 포함)
-        const receiptMap = new Map();
-        const txMap = new Map();
+        const 영수증맵 = new Map();
+        const 트랜잭션맵 = new Map();
 
-        // receipts
         await Promise.all(
           txHashes.map(async (h) => {
             try {
-              const r = await provider.getTransactionReceipt(h);
-              if (r) receiptMap.set(h, r);
+              const r = await 프로바이더.getTransactionReceipt(h);
+              if (r) 영수증맵.set(h, r);
             } catch {}
           })
         );
 
-        // transactions (from/to/value 채우기)
         await Promise.all(
           txHashes.map(async (h) => {
             try {
-              const t = await provider.getTransaction(h);
-              if (t) txMap.set(h, t);
+              const t = await 프로바이더.getTransaction(h);
+              if (t) 트랜잭션맵.set(h, t);
             } catch {}
           })
         );
 
-        const txs = txHashes.map((h) => {
-          const t = txMap.get(h);
-          const r = receiptMap.get(h);
+        let 트랜잭션들 = txHashes.map((h) => {
+          const t = 트랜잭션맵.get(h);
+          const r = 영수증맵.get(h);
 
-          const gasUsed = r?.gasUsed ?? null; // BigInt
-          const gasPrice = r?.effectiveGasPrice ?? null; // BigInt
-          const feeWei =
-            gasUsed != null && gasPrice != null ? gasUsed * gasPrice : null;
+          const gasUsed = r?.gasUsed ?? null;
+          const 이벤트들 = tx이벤트요약(r, 컨트랙트, 컨트랙트주소);
 
           return {
-            hash: h,
-            from: t?.from || "",
-            to: t?.to || "",
-            valueWei: t?.value != null ? safeToString(t.value) : "",
-            gasUsed: gasUsed != null ? safeToString(gasUsed) : "",
-            feeEth: feeWei != null ? ethers.formatEther(feeWei) : "",
+            해시: h,
+            보낸주소: t?.from || "",
+            받은주소: t?.to || "",
+            가스사용량: gasUsed != null ? 안전문자열(gasUsed) : "",
+            이벤트들,
           };
         });
 
-        fetchedBlocks.push({
-          number: blk.number,
-          hash: blk.hash,
-          timestamp: blk.timestamp,
-          txs,
-        });
+        if (내것만보기 && 내주소) {
+          트랜잭션들 = 트랜잭션들.filter(
+            (t) => 주소같음(t.보낸주소, 내주소) || 주소같음(t.받은주소, 내주소)
+          );
+        }
 
-        // ✅ 이벤트: receipt 로그에서 컨트랙트 주소만 추출/디코딩
-        for (const h of txHashes) {
-          const receipt = receiptMap.get(h);
-          if (!receipt?.logs?.length) continue;
-
-          for (const log of receipt.logs) {
-            if (!log.address || log.address.toLowerCase() !== contractAddress.toLowerCase())
-              continue;
-
-            try {
-              const parsed = contract.interface.parseLog({
-                topics: log.topics,
-                data: log.data,
-              });
-              fetchedEvents.push({
-                blockNumber: receipt.blockNumber,
-                txHash: receipt.hash,
-                name: parsed?.name || "Event",
-                args: parsed?.args ? normalizeArgs(parsed.args) : {},
-              });
-            } catch {
-              fetchedEvents.push({
-                blockNumber: receipt.blockNumber,
-                txHash: receipt.hash,
-                name: "UnknownLog",
-                args: {},
-              });
-            }
-          }
+        if (!내것만보기 || 트랜잭션들.length > 0) {
+          불러온블록들.push({
+            번호: blk.number,
+            해시: blk.hash,
+            타임스탬프: blk.timestamp,
+            트랜잭션들,
+          });
         }
       }
 
-      fetchedBlocks.sort((a, b) => b.number - a.number);
-      fetchedEvents.sort((a, b) => (b.blockNumber ?? 0) - (a.blockNumber ?? 0));
+      불러온블록들.sort((a, b) => b.번호 - a.번호);
+      블록목록설정(불러온블록들);
 
-      setBlocks(fetchedBlocks);
-      setEvents(fetchedEvents.slice(0, 50));
-
-      // 주문 목록
-      let nextId = 0;
+      let nextId = 1;
       try {
-        const v = await contract.nextOrderId();
+        const v = await 컨트랙트.nextOrderId();
         nextId = Number(v);
       } catch {
-        nextId = 0;
+        nextId = 1;
       }
 
-      const fetchedOrders = [];
-      const maxOrdersToShow = Math.min(nextId, 200);
-      for (let i = 0; i < maxOrdersToShow; i++) {
+      const 불러온주문들 = [];
+      const 상한 = Math.min(nextId, 201);
+      for (let i = 1; i < 상한; i++) {
         try {
-          const o = await contract.orders(i);
-          fetchedOrders.push(mapOrder(o, i));
+          const o = await 컨트랙트.orders(i);
+          const 주문 = 주문매핑(o, i);
+          if (!주문.maker || /^0x0{40}$/i.test(주문.maker)) continue;
+
+          if (!내것만보기 || 주소같음(주문.maker, 내주소)) {
+            불러온주문들.push(주문);
+          }
         } catch {}
       }
-
-      setOrders(fetchedOrders);
+      주문목록설정(불러온주문들);
     } catch (e) {
-      setErr(e?.message || String(e));
+      에러설정(e?.message || String(e));
     } finally {
-      setLoading(false);
+      로딩중설정(false);
     }
   }
 
   useEffect(() => {
     let alive = true;
+    let timerId = null;
+    let inFlight = false;
 
-    (async () => {
-      await loadAll();
+    const tick = async (silent) => {
       if (!alive) return;
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        await 모두불러오기({ 조용히: silent });
+      } finally {
+        inFlight = false;
+      }
+    };
 
-      const t = setInterval(() => loadAll({ silent: true }), POLL_MS);
-      return () => clearInterval(t);
-    })();
+    tick(false);
+    timerId = setInterval(() => tick(true), 폴링간격MS);
 
     return () => {
       alive = false;
+      if (timerId) clearInterval(timerId);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const styles = useMemo(
-    () => ({
-      wrap: { padding: 16, display: "grid", gap: 16 },
-      card: { border: "1px solid #e5e7eb", borderRadius: 12, padding: 14, background: "#fff" },
-      titleRow: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 },
-      h2: { margin: 0, fontSize: 16 },
-      small: { fontSize: 12, opacity: 0.8 },
-      mono: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 12 },
-      table: { width: "100%", borderCollapse: "collapse", fontSize: 13 },
-      th: { textAlign: "left", borderBottom: "1px solid #eee", padding: "8px 6px" },
-      td: { borderBottom: "1px solid #f3f4f6", padding: "8px 6px", verticalAlign: "top" },
-      badge: { display: "inline-block", padding: "2px 8px", borderRadius: 999, border: "1px solid #ddd", fontSize: 12 },
-      row2: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 },
-    }),
-    []
-  );
+  }, [내것만보기]);
 
   return (
     <Layout>
-      <div style={styles.wrap}>
-        <div style={styles.titleRow}>
-          <div>
-            <h1 style={{ margin: 0, fontSize: 20 }}>온체인 기록 모니터</h1>
-            <div style={styles.small}>블록/트랜잭션/이벤트/주문을 한 화면에서 확인</div>
+      <div className="cm-wrap">
+        <div className="cm-header">
+          <div className="cm-header-left">
+            <h1 className="cm-title">온체인 기록 모니터</h1>
+            <div className="cm-subtitle">블록/트랜잭션/이벤트/주문을 한 화면에서 확인</div>
           </div>
-          <button
-            onClick={() => loadAll()}
-            style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid #ddd", background: "#fff", cursor: "pointer" }}
-          >
-            새로고침
-          </button>
+
+          <div className="cm-actions">
+            <button
+              className={`cm-btn ${내것만보기 ? "cm-btn--primary" : ""}`}
+              onClick={() => 내것만보기설정((v) => !v)}
+              title="내 주소(보낸/받은/메이커)에 관련된 항목만 표시"
+            >
+              {내것만보기 ? "내 것만 보는 중" : "전체 보는 중"}
+            </button>
+
+            <button className="cm-btn" onClick={() => 모두불러오기()}>
+              새로고침
+            </button>
+          </div>
         </div>
 
-        {err && (
-          <div style={{ ...styles.card, borderColor: "#fecaca", background: "#fff5f5" }}>
-            <div style={{ fontWeight: 700, marginBottom: 6 }}>에러</div>
-            <div style={styles.mono}>{err}</div>
+        {에러 && (
+          <div className="cm-card cm-card--error">
+            <div className="cm-card-title">에러</div>
+            <div className="cm-mono">{에러}</div>
           </div>
         )}
 
-        <div style={styles.card}>
-          <div style={styles.titleRow}>
-            <h2 style={styles.h2}>체인 상태</h2>
-            <span style={styles.badge}>{loading ? "로딩중…" : "live"}</span>
+        <div className="cm-card">
+          <div className="cm-card-head">
+            <h2 className="cm-h2">체인 상태</h2>
+            <span className="cm-badge">{로딩중 ? "로딩중…" : "실시간"}</span>
           </div>
-          <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
-            <div><b>RPC</b>: <span style={styles.mono}>{chainInfo.rpc}</span></div>
-            <div><b>최신 블록</b>: <span style={styles.mono}>{chainInfo.latestBlock}</span></div>
-            <div><b>내 주소</b>: <span style={styles.mono}>{chainInfo.myAddress || "(signer 없음)"}</span></div>
-            <div><b>내 ETH</b>: <span style={styles.mono}>{chainInfo.myEth ? `${chainInfo.myEth} ETH` : "-"}</span></div>
-            <div><b>컨트랙트</b>: <span style={styles.mono}>{chainInfo.contractAddress}</span></div>
+
+          <div className="cm-kv">
+            <div className="cm-kv-row">
+              <b>RPC</b> <span className="cm-mono">{체인정보.rpc}</span>
+            </div>
+            <div className="cm-kv-row">
+              <b>최신 블록</b> <span className="cm-mono">{체인정보.최신블록}</span>
+            </div>
+            <div className="cm-kv-row">
+              <b>내 주소</b>{" "}
+              <span className="cm-mono">{체인정보.내주소 || "(서명자 없음)"}</span>
+            </div>
+            <div className="cm-kv-row">
+              <b>내 ETH</b>{" "}
+              <span className="cm-mono">
+                {체인정보.내이더 ? `${체인정보.내이더} ETH` : "-"}
+              </span>
+            </div>
+            <div className="cm-kv-row">
+              <b>컨트랙트</b> <span className="cm-mono">{체인정보.컨트랙트주소}</span>
+            </div>
           </div>
         </div>
 
-        <div style={styles.row2}>
-          <div style={styles.card}>
-            <div style={styles.titleRow}>
-              <h2 style={styles.h2}>최근 블록 / 트랜잭션</h2>
-              <div style={styles.small}>최근 {BLOCK_LOOKBACK}개 블록</div>
-            </div>
+        <div className="cm-card">
+          <div className="cm-card-head">
+            <h2 className="cm-h2">최근 블록 / 트랜잭션 (이벤트 포함)</h2>
+            <div className="cm-muted">최근 {블록조회개수}개 블록</div>
+          </div>
 
-            {blocks.map((b) => (
-              <div key={b.number} style={{ marginTop: 12 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                  <div>
-                    <b>Block #{b.number}</b> <span style={styles.mono}>{short(b.hash, 8)}</span>
-                  </div>
-                  <div style={styles.small}>{new Date(b.timestamp * 1000).toLocaleString()}</div>
+          {블록목록.map((b) => (
+            <div key={b.번호} className="cm-block">
+              <div className="cm-block-head">
+                <div className="cm-block-title">
+                  <b>Block #{b.번호}</b>{" "}
+                  <span className="cm-mono cm-hash">{짧게(b.해시, 8)}</span>
                 </div>
+                <div className="cm-muted">
+                  {new Date(b.타임스탬프 * 1000).toLocaleString()}
+                </div>
+              </div>
 
-                <table style={{ ...styles.table, marginTop: 8 }} className="cm-table-wide">
+              <div className="cm-table-wrap">
+                <table className="cm-table cm-table-wide">
                   <thead>
                     <tr>
-                      <th style={styles.th}>Tx</th>
-                      <th style={styles.th}>From</th>
-                      <th style={styles.th}>To</th>
-                      <th style={styles.th}>Value(wei)</th>
-                      <th style={styles.th}>GasUsed</th>
-                      <th style={styles.th}>수수료(ETH)</th>
+                      <th>트랜잭션</th>
+                      <th>이벤트</th>
+                      <th>보낸 주소</th>
+                      <th>받는 주소</th>
+                      <th>가스 사용량</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {b.txs.length === 0 ? (
-                      <tr><td style={styles.td} colSpan={6}>트랜잭션 없음</td></tr>
+                    {b.트랜잭션들.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="cm-empty">
+                          트랜잭션 없음
+                        </td>
+                      </tr>
                     ) : (
-                      b.txs.map((t) => (
-                        <tr key={t.hash}>
-                          <td style={{ ...styles.td, ...styles.mono }}>{short(t.hash, 8)}</td>
-                          <td style={{ ...styles.td, ...styles.mono }}>{t.from ? short(t.from, 8) : "-"}</td>
-                          <td style={{ ...styles.td, ...styles.mono }}>{t.to ? short(t.to, 8) : "-"}</td>
-                          <td style={{ ...styles.td, ...styles.mono }}>{t.valueWei || "-"}</td>
-                          <td style={{ ...styles.td, ...styles.mono }}>{t.gasUsed || "-"}</td>
-                          <td style={{ ...styles.td, ...styles.mono }}>{t.feeEth ? `${t.feeEth} ETH` : "-"}</td>
+                      b.트랜잭션들.map((t) => (
+                        <tr key={t.해시}>
+                          <td className="cm-mono" title={t.해시}>
+                            {짧게(t.해시, 8)}
+                          </td>
+
+                          <td>
+                            {t.이벤트들?.length ? (
+                              <div className="cm-event-wrap">
+                                {t.이벤트들.map((ev, i) => (
+                                  <span
+                                    key={`${t.해시}-ev-${i}`}
+                                    className="cm-event-chip"
+                                    title={
+                                      Object.keys(ev.args || {}).length
+                                        ? JSON.stringify(ev.args)
+                                        : ""
+                                    }
+                                  >
+                                    <b>{ev.name}</b>
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="cm-muted">-</span>
+                            )}
+                          </td>
+
+                          <td className="cm-mono">{t.보낸주소 ? 짧게(t.보낸주소, 8) : "-"}</td>
+                          <td className="cm-mono">{t.받은주소 ? 짧게(t.받은주소, 8) : "-"}</td>
+                          <td className="cm-mono">{t.가스사용량 || "-"}</td>
                         </tr>
                       ))
                     )}
                   </tbody>
                 </table>
               </div>
-            ))}
+            </div>
+          ))}
+        </div>
+
+        <div className="cm-card">
+          <div className="cm-card-head">
+            <h2 className="cm-h2">온체인 주문 목록</h2>
+            <div className="cm-muted">nextOrderId 기반 1..N-1 조회</div>
           </div>
 
-          <div style={styles.card}>
-            <div style={styles.titleRow}>
-              <h2 style={styles.h2}>컨트랙트 이벤트 로그</h2>
-              <div style={styles.small}>컨트랙트 주소에서 발생한 로그만</div>
-            </div>
-
-            <table style={{ ...styles.table, marginTop: 10 }}>
+          <div className="cm-table-wrap">
+            <table className="cm-table">
               <thead>
                 <tr>
-                  <th style={styles.th}>Block</th>
-                  <th style={styles.th}>Tx</th>
-                  <th style={styles.th}>Event</th>
-                  <th style={styles.th}>Args</th>
+                  <th>주문 ID</th>
+                  <th>생성자(메이커)</th>
+                  <th>구분</th>
+                  <th>수량(kWh)</th>
+                  <th>단가</th>
+                  <th>시작 시간</th>
+                  <th>종료 시간</th>
+                  <th>상태</th>
+                  <th>가중치(Price/Dist/Trust)</th>
+                  <th>Bucket</th>
                 </tr>
               </thead>
               <tbody>
-                {events.length === 0 ? (
+                {주문목록.length === 0 ? (
                   <tr>
-                    <td style={styles.td} colSpan={4}>
-                      이벤트가 없거나, ABI에 이벤트 정의가 없을 수 있어요.
+                    <td colSpan={10} className="cm-empty">
+                      주문이 없거나 조회가 안 됐을 수 있어요.
                     </td>
                   </tr>
                 ) : (
-                  events.map((ev, idx) => (
-                    <tr key={`${ev.txHash}-${idx}`}>
-                      <td style={{ ...styles.td, ...styles.mono }}>{ev.blockNumber}</td>
-                      <td style={{ ...styles.td, ...styles.mono }}>{short(ev.txHash, 8)}</td>
-                      <td style={styles.td}><b>{ev.name}</b></td>
-                      <td style={{ ...styles.td, ...styles.mono }}>
-                        {Object.keys(ev.args || {}).length === 0 ? "-" : JSON.stringify(ev.args)}
+                  주문목록.map((o) => (
+                    <tr key={o.id}>
+                      <td className="cm-mono">{o.id}</td>
+                      <td className="cm-mono">{짧게(o.maker, 8)}</td>
+                      <td className="cm-mono">{사이드라벨(o.side)}</td>
+                      <td className="cm-mono">{o.amountKwh}</td>
+                      <td className="cm-mono">{o.pricePerKwh}</td>
+                      <td className="cm-mono">{o.startTime}</td>
+                      <td className="cm-mono">{o.endTime}</td>
+                      <td className="cm-mono">{상태라벨(o.status)}</td>
+                      <td className="cm-mono">
+                        {o.wPriceBps}/{o.wDistBps}/{o.wTrustBps}
                       </td>
+                      <td className="cm-mono">{o.bucketId}</td>
                     </tr>
                   ))
                 )}
@@ -400,53 +487,10 @@ export default function ChainMonitorPage() {
           </div>
         </div>
 
-        <div style={styles.card}>
-          <div style={styles.titleRow}>
-            <h2 style={styles.h2}>온체인 주문 목록</h2>
-            <div style={styles.small}>nextOrderId 기반 0..N-1 조회</div>
-          </div>
-
-          <table style={{ ...styles.table, marginTop: 10 }}>
-            <thead>
-              <tr>
-                <th style={styles.th}>id</th>
-                <th style={styles.th}>maker</th>
-                <th style={styles.th}>side</th>
-                <th style={styles.th}>amountKwh</th>
-                <th style={styles.th}>pricePerKwh</th>
-                <th style={styles.th}>start</th>
-                <th style={styles.th}>end</th>
-                <th style={styles.th}>status</th>
-                <th style={styles.th}>w</th>
-              </tr>
-            </thead>
-            <tbody>
-              {orders.length === 0 ? (
-                <tr><td style={styles.td} colSpan={9}>주문이 없거나 조회 함수가 없을 수 있어요.</td></tr>
-              ) : (
-                orders.map((o) => (
-                  <tr key={o.id}>
-                    <td style={{ ...styles.td, ...styles.mono }}>{o.id}</td>
-                    <td style={{ ...styles.td, ...styles.mono }}>{short(o.maker, 8)}</td>
-                    <td style={{ ...styles.td, ...styles.mono }}>{o.side}</td>
-                    <td style={{ ...styles.td, ...styles.mono }}>{o.amountKwh}</td>
-                    <td style={{ ...styles.td, ...styles.mono }}>{o.pricePerKwh}</td>
-                    <td style={{ ...styles.td, ...styles.mono }}>{o.startTime}</td>
-                    <td style={{ ...styles.td, ...styles.mono }}>{o.endTime}</td>
-                    <td style={{ ...styles.td, ...styles.mono }}>{o.status}</td>
-                    <td style={{ ...styles.td, ...styles.mono }}>{o.w}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        <div style={{ ...styles.small, textAlign: "center", paddingBottom: 10 }}>
-          끝: 이제 “내 ETH + 가스 사용량/수수료”까지 모니터에서 바로 확인 가능.
+        <div className="cm-footer">
+          끝: 이제 “이벤트”는 트랜잭션 옆에서 바로 확인할 수 있어요.
         </div>
       </div>
     </Layout>
   );
 }
-    

@@ -53,22 +53,25 @@ public class SecurityConfig {
                     "/api/naver-geocoding"
                 ).permitAll()
 
-                // ✅ [추가] 최소 종료시간 계산 endpoint는 공개 (토큰 없이도 OK)
+                // ✅ 최소 종료시간 계산 endpoint는 공개 (토큰 없이도 OK)
                 .requestMatchers(HttpMethod.GET, "/orders/min-end-time").permitAll()
 
-                // ✅ (기존) 일부는 인증 필요
+                // ✅ 인증 필요
                 .requestMatchers("/api/auth/me").authenticated()
                 .requestMatchers("/api/auth/change-password").authenticated()
 
+                // ✅ 지갑/에너지 지갑 인증 필요
                 .requestMatchers("/api/wallet/**").authenticated()
                 .requestMatchers("/energy-wallet/**").authenticated()
                 .requestMatchers("/api/energy-wallet/**").authenticated()
 
-                // ✅ (기존) 주문 관련은 기본적으로 인증 필요
+                // ✅ 주문 관련 인증 필요
                 .requestMatchers("/orders/**").authenticated()
 
-                // ✅ (주의) 이건 지금 "permitAll"이라 누구나 충전 가능해짐 (원래 의도 맞는지 체크)
-                .requestMatchers(HttpMethod.POST, "/api/wallet/me/charge").permitAll()
+                // ❌ (기존 permitAll 제거) 누구나 충전 가능해지는 보안 구멍이었음
+                // .requestMatchers(HttpMethod.POST, "/api/wallet/me/charge").permitAll()
+
+                // ✅ 위에 /api/wallet/** 가 authenticated라서 여기 별도 지정 없이도 충전은 인증 필요
 
                 .anyRequest().authenticated()
             )

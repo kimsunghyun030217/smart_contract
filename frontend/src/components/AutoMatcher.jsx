@@ -20,24 +20,11 @@ export default function AutoMatcher() {
   const inFlightRef = useRef(false);
   const lastRunAtRef = useRef(0);
 
-  // ✅ 0) 컴포넌트가 화면에 올라왔는지(마운트) 확인
-  console.log("🟦 AutoMatcher render", { enabled });
-
   useEffect(() => {
-    console.log("🟩 AutoMatcher useEffect entered", { enabled });
-
-    if (!enabled) {
-      console.log("🟨 AutoMatcher disabled -> return");
-      return;
-    }
+    if (!enabled) return;
 
     const username = localStorage.getItem("username");
-    console.log("🟨 localStorage username =", username);
-
-    if (!username) {
-      console.log("🟥 username 없음 -> AutoMatcher 중단 (로그인/키 확인)");
-      return;
-    }
+    if (!username) return;
 
     let stopped = false;
     let timer = null;
@@ -45,46 +32,24 @@ export default function AutoMatcher() {
     async function tick() {
       if (stopped) return;
 
-      console.log("⏱ AutoMatcher tick start", new Date().toLocaleTimeString());
-
       // 너무 자주 겹치 실행 방지
       const now = Date.now();
-      if (now - lastRunAtRef.current < 3000) {
-        console.log("🟧 skip: too frequent");
-        return;
-      }
+      if (now - lastRunAtRef.current < 3000) return;
       lastRunAtRef.current = now;
 
-      if (inFlightRef.current) {
-        console.log("🟧 skip: inFlight");
-        return;
-      }
+      if (inFlightRef.current) return;
       inFlightRef.current = true;
 
       try {
-        console.log("🔵 getMarket start");
         const market = await getMarket(username);
-        console.log("🔵 getMarket success", market?.target || market?.address || market);
-
         const me = await market.runner.getAddress();
-        console.log("👤 my EOA =", me);
-
         const nowSec = Math.floor(Date.now() / 1000);
 
         // 1) 최근 주문들에서 "내 ACTIVE BUY" 찾기
         const nextId = Number(await market.nextOrderId());
         const from = Math.max(1, nextId - SCAN_LAST_N_ORDERS);
-        console.log("📌 nextOrderId =", nextId, "scanFrom =", from, "nowSec =", nowSec);
 
         const activeBuyIds = [];
-
-        // ✅ 샘플 1개는 꼭 찍어보자(최근 주문)
-        if (nextId > 1) {
-          const sample = await market.orders(BigInt(nextId - 1));
-          console.log("🔍 sample last order raw =", sample);
-        } else {
-          console.log("ℹ️ 주문이 아직 1개도 없음(nextId<=1)");
-        }
 
         for (let id = nextId - 1; id >= from; id--) {
           const o = await market.orders(BigInt(id));
@@ -100,22 +65,12 @@ export default function AutoMatcher() {
           const isActive = status === STATUS_ACTIVE;
           const notExpired = endTime > nowSec;
 
-          // ✅ 너무 많으면 콘솔 폭탄이니까 "내 주문만" 간단히 출력
-          if (isMine) {
-            console.log("🧾 myOrder", { id, maker, side, status, endTime, notExpired });
-          }
-
           if (isMine && isBuy && isActive && notExpired) {
             activeBuyIds.push(id);
           }
         }
 
-        console.log("✅ activeBuyIds =", activeBuyIds);
-
-        if (activeBuyIds.length === 0) {
-          console.log("🟨 내 ACTIVE BUY가 없음 -> 매칭 시도 없음");
-          return;
-        }
+        if (activeBuyIds.length === 0) return;
 
         // 2) 각 BUY에 대해: "될 때만 tx" (시뮬레이션 -> 실제 실행)
         let matchedCount = 0;
@@ -123,13 +78,6 @@ export default function AutoMatcher() {
         for (const buyId of activeBuyIds) {
           if (stopped) break;
           if (matchedCount >= MAX_MATCH_PER_TICK) break;
-
-          console.log("🧪 try staticCall matchBuy", {
-            buyId,
-            RADIUS,
-            SCAN_LIMIT_PER_BUCKET,
-            MAX_EVAL,
-          });
 
           // (A) 시뮬레이션: 성공 가능 여부만 확인
           let canMatch = true;
@@ -140,79 +88,52 @@ export default function AutoMatcher() {
               BigInt(SCAN_LIMIT_PER_BUCKET),
               BigInt(MAX_EVAL)
             );
-            console.log("🟩 staticCall SUCCESS -> canMatch = true", { buyId });
-          } catch (e) {
+          } catch {
             canMatch = false;
-            console.log("🟥 staticCall FAILED -> canMatch = false", {
-              buyId,
-              short: e?.shortMessage,
-              reason: e?.reason,
-              message: e?.message,
-              data: e?.data,
-            });
           }
 
           if (!canMatch) continue;
 
           // (B) 실제 매칭 트랜잭션
           try {
-            console.log("🟦 sending matchBuy tx...", { buyId });
             const tx = await market.matchBuy(
               BigInt(buyId),
               BigInt(RADIUS),
               BigInt(SCAN_LIMIT_PER_BUCKET),
               BigInt(MAX_EVAL)
             );
-            console.log("🟦 tx sent:", tx.hash);
 
             const receipt = await tx.wait();
-            console.log("🟦 tx confirmed", receipt?.hash);
 
-            // OrderMatched 이벤트에서 tradeId 추출
+            // OrderMatched 이벤트에서 tradeId 추출 (있으면 사용)
             const ev = receipt.logs
               .map((log) => {
                 try { return market.interface.parseLog(log); } catch { return null; }
               })
               .find((x) => x && x.name === "OrderMatched");
 
-            if (ev) {
-              const tradeId = ev.args.tradeId?.toString?.() ?? String(ev.args[2]);
-              console.log("✅ AutoMatcher matched:", { buyId, tradeId });
-            } else {
-              console.log("✅ AutoMatcher matched (no event parsed):", { buyId });
-            }
+            // ev가 없어도 매칭 자체는 성공했을 수 있음
+            void ev;
 
             matchedCount++;
-          } catch (e) {
-            console.warn("⚠️ matchBuy tx failed (race ok):", {
-              buyId,
-              short: e?.shortMessage,
-              reason: e?.reason,
-              message: e?.message,
-            });
+          } catch {
+            // race condition 등은 그냥 무시 (조용히)
           }
         }
-      } catch (e) {
-        console.error("❌ AutoMatcher tick error:", {
-          short: e?.shortMessage,
-          reason: e?.reason,
-          message: e?.message,
-        });
+      } catch {
+        // 조용히
       } finally {
         inFlightRef.current = false;
-        console.log("⏱ AutoMatcher tick end");
       }
     }
 
     // 시작하자마자 1번 실행 + 주기 실행
     tick();
     timer = setInterval(tick, INTERVAL_MS);
-    console.log("🟩 AutoMatcher interval started", INTERVAL_MS);
 
     return () => {
       stopped = true;
       if (timer) clearInterval(timer);
-      console.log("🟥 AutoMatcher cleanup (interval cleared)");
     };
   }, [enabled]);
 

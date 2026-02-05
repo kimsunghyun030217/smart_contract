@@ -50,6 +50,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         String authHeader = request.getHeader("Authorization");
+
+        // ✅ 토큰이 아예 없으면: 그냥 통과 (SecurityConfig의 authenticated()가 401/403 처리)
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             filterChain.doFilter(request, response);
             return;
@@ -68,9 +70,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             else if (rawUserId != null) userId = Long.valueOf(rawUserId.toString());
 
             if (userId != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-
                 var authentication = new UsernamePasswordAuthenticationToken(
-                        userId, // ✅ principal = Long userId (컨트롤러 extractUserId와 일치)
+                        userId, // ✅ principal = Long userId
                         null,
                         List.of(new SimpleGrantedAuthority("ROLE_USER"))
                 );
@@ -79,11 +80,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             }
 
-        } catch (Exception e) {
-            // 토큰이 이상하면 인증 세팅 없이 통과 → Security가 막음(401/403)
-            System.out.println("JWT 검증 실패: " + e.getMessage());
-        }
+            filterChain.doFilter(request, response);
 
-        filterChain.doFilter(request, response);
+        } catch (Exception e) {
+            // ✅ 핵심: Bearer 토큰이 있는데 검증 실패면 "즉시 401"로 끊어야 프론트가 캐치 가능
+            SecurityContextHolder.clearContext();
+
+            System.out.println("JWT 검증 실패: " + e.getMessage());
+
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            response.setContentType("application/json; charset=UTF-8");
+            response.getWriter().write("{\"message\":\"Invalid or expired token\"}");
+            return;
+        }
     }
 }
