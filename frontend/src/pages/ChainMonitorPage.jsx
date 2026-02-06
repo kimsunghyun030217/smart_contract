@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import Layout from "../components/Layout";
 import { getMarket } from "../web3/market";
 import { ethers } from "ethers";
@@ -15,7 +15,6 @@ export default function ChainMonitorPage() {
     최신블록: 0,
     내주소: "",
     내이더: "",
-    컨트랙트주소: "",
   });
 
   const [블록목록, 블록목록설정] = useState([]);
@@ -109,29 +108,59 @@ export default function ChainMonitorPage() {
     }
   };
 
-  function tx이벤트요약(receipt, 컨트랙트, 컨트랙트주소) {
+  // ✅ 이벤트(컨트랙트 로그) 이름을 발표용 "처리 결과" 라벨로 변환
+  function 처리결과라벨(evName) {
+    const name = String(evName || "");
+    const map = {
+      TradeSettled: "정산 완료",
+      OrderCreated: "주문 생성",
+      OrderCancelled: "주문 취소",
+      OrderMatched: "매칭 완료",
+      OrderCompleted: "거래 완료",
+      BalanceFunded: "충전 완료",
+      BucketUpdated: "버킷 설정",
+    };
+    return map[name] || name || "결과";
+  }
+
+  // ✅ 수수료(ETH) 계산: gasUsed * (effectiveGasPrice or gasPrice)
+  function 수수료ETH계산(receipt, tx) {
+    try {
+      const gasUsed = receipt?.gasUsed;
+      const gasPrice = receipt?.effectiveGasPrice ?? tx?.gasPrice;
+      if (gasUsed == null || gasPrice == null) return { feeEth: "", gasUsed: "" };
+
+      const feeWei = BigInt(gasUsed) * BigInt(gasPrice);
+      const feeEth = ethers.formatEther(feeWei);
+
+      return { feeEth, gasUsed: 안전문자열(gasUsed) };
+    } catch {
+      return { feeEth: "", gasUsed: "" };
+    }
+  }
+
+  // ✅ 영수증 로그를 ABI로 파싱해서 "처리 결과"만 뽑아냄 (컨트랙트주소 필터링 없음)
+  function tx처리결과요약(receipt, 컨트랙트) {
     try {
       const logs = receipt?.logs || [];
-      const cAddr = (컨트랙트주소 || "").toLowerCase();
-
       const out = [];
-      for (const lg of logs) {
-        if (!lg?.address) continue;
-        if (lg.address.toLowerCase() !== cAddr) continue;
 
+      for (const lg of logs) {
         try {
           const parsed = 컨트랙트.interface.parseLog({
             topics: lg.topics,
             data: lg.data,
           });
           out.push({
-            name: parsed?.name || "이벤트",
+            name: parsed?.name || "결과",
+            label: 처리결과라벨(parsed?.name),
             args: parsed?.args ? 인자정리(parsed.args) : {},
           });
         } catch {
-          out.push({ name: "알수없는로그", args: {} });
+          // 다른 컨트랙트 로그 등 파싱 실패는 무시
         }
       }
+
       return out;
     } catch {
       return [];
@@ -145,10 +174,9 @@ export default function ChainMonitorPage() {
 
       const username = localStorage.getItem("username") || "";
       const 컨트랙트 = await getMarket(username);
+
       const 프로바이더 = 컨트랙트.runner?.provider || 컨트랙트.provider;
       if (!프로바이더) throw new Error("프로바이더를 찾을 수 없어요. getMarket() 확인 필요");
-
-      const 컨트랙트주소 = await 컨트랙트.getAddress();
 
       const 서명자 =
         컨트랙트.runner && typeof 컨트랙트.runner.getAddress === "function"
@@ -169,7 +197,6 @@ export default function ChainMonitorPage() {
         최신블록,
         내주소,
         내이더,
-        컨트랙트주소,
       }));
 
       const from = Math.max(0, 최신블록 - (블록조회개수 - 1));
@@ -211,22 +238,21 @@ export default function ChainMonitorPage() {
           const t = 트랜잭션맵.get(h);
           const r = 영수증맵.get(h);
 
-          const gasUsed = r?.gasUsed ?? null;
-          const 이벤트들 = tx이벤트요약(r, 컨트랙트, 컨트랙트주소);
+          const 처리결과들 = tx처리결과요약(r, 컨트랙트);
+          const { feeEth, gasUsed } = 수수료ETH계산(r, t);
 
           return {
             해시: h,
-            보낸주소: t?.from || "",
-            받은주소: t?.to || "",
-            가스사용량: gasUsed != null ? 안전문자열(gasUsed) : "",
-            이벤트들,
+            요청자주소: t?.from || "",
+            수수료ETH: feeEth || "",
+            가스사용량: gasUsed || "",
+            처리결과들,
           };
         });
 
+        // ✅ "내 것만 보기"는 발표용으로 요청자(from) 기준만 필터
         if (내것만보기 && 내주소) {
-          트랜잭션들 = 트랜잭션들.filter(
-            (t) => 주소같음(t.보낸주소, 내주소) || 주소같음(t.받은주소, 내주소)
-          );
+          트랜잭션들 = 트랜잭션들.filter((t) => 주소같음(t.요청자주소, 내주소));
         }
 
         if (!내것만보기 || 트랜잭션들.length > 0) {
@@ -303,14 +329,14 @@ export default function ChainMonitorPage() {
         <div className="cm-header">
           <div className="cm-header-left">
             <h1 className="cm-title">온체인 기록 모니터</h1>
-            <div className="cm-subtitle">블록/트랜잭션/이벤트/주문을 한 화면에서 확인</div>
+            <div className="cm-subtitle">블록/트랜잭션/처리 결과/주문을 한 화면에서 확인</div>
           </div>
 
           <div className="cm-actions">
             <button
               className={`cm-btn ${내것만보기 ? "cm-btn--primary" : ""}`}
               onClick={() => 내것만보기설정((v) => !v)}
-              title="내 주소(보낸/받은/메이커)에 관련된 항목만 표시"
+              title="내 주소(요청자/메이커)에 관련된 항목만 표시"
             >
               {내것만보기 ? "내 것만 보는 중" : "전체 보는 중"}
             </button>
@@ -342,24 +368,18 @@ export default function ChainMonitorPage() {
               <b>최신 블록</b> <span className="cm-mono">{체인정보.최신블록}</span>
             </div>
             <div className="cm-kv-row">
-              <b>내 주소</b>{" "}
-              <span className="cm-mono">{체인정보.내주소 || "(서명자 없음)"}</span>
+              <b>내 주소</b> <span className="cm-mono">{체인정보.내주소 || "(서명자 없음)"}</span>
             </div>
             <div className="cm-kv-row">
               <b>내 ETH</b>{" "}
-              <span className="cm-mono">
-                {체인정보.내이더 ? `${체인정보.내이더} ETH` : "-"}
-              </span>
-            </div>
-            <div className="cm-kv-row">
-              <b>컨트랙트</b> <span className="cm-mono">{체인정보.컨트랙트주소}</span>
+              <span className="cm-mono">{체인정보.내이더 ? `${체인정보.내이더} ETH` : "-"}</span>
             </div>
           </div>
         </div>
 
         <div className="cm-card">
           <div className="cm-card-head">
-            <h2 className="cm-h2">최근 블록 / 트랜잭션 (이벤트 포함)</h2>
+            <h2 className="cm-h2">최근 블록 / 트랜잭션</h2>
             <div className="cm-muted">최근 {블록조회개수}개 블록</div>
           </div>
 
@@ -367,12 +387,9 @@ export default function ChainMonitorPage() {
             <div key={b.번호} className="cm-block">
               <div className="cm-block-head">
                 <div className="cm-block-title">
-                  <b>Block #{b.번호}</b>{" "}
-                  <span className="cm-mono cm-hash">{짧게(b.해시, 8)}</span>
+                  <b>Block #{b.번호}</b> <span className="cm-mono cm-hash">{짧게(b.해시, 8)}</span>
                 </div>
-                <div className="cm-muted">
-                  {new Date(b.타임스탬프 * 1000).toLocaleString()}
-                </div>
+                <div className="cm-muted">{new Date(b.타임스탬프 * 1000).toLocaleString()}</div>
               </div>
 
               <div className="cm-table-wrap">
@@ -380,16 +397,15 @@ export default function ChainMonitorPage() {
                   <thead>
                     <tr>
                       <th>트랜잭션</th>
-                      <th>이벤트</th>
-                      <th>보낸 주소</th>
-                      <th>받는 주소</th>
-                      <th>가스 사용량</th>
+                      <th>처리 결과</th>
+                      <th>요청자 주소</th>
+                      <th>수수료(ETH)</th>
                     </tr>
                   </thead>
                   <tbody>
                     {b.트랜잭션들.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="cm-empty">
+                        <td colSpan={4} className="cm-empty">
                           트랜잭션 없음
                         </td>
                       </tr>
@@ -401,19 +417,19 @@ export default function ChainMonitorPage() {
                           </td>
 
                           <td>
-                            {t.이벤트들?.length ? (
+                            {t.처리결과들?.length ? (
                               <div className="cm-event-wrap">
-                                {t.이벤트들.map((ev, i) => (
+                                {t.처리결과들.map((ev, i) => (
                                   <span
-                                    key={`${t.해시}-ev-${i}`}
+                                    key={`${t.해시}-res-${i}`}
                                     className="cm-event-chip"
                                     title={
                                       Object.keys(ev.args || {}).length
                                         ? JSON.stringify(ev.args)
-                                        : ""
+                                        : ev.name
                                     }
                                   >
-                                    <b>{ev.name}</b>
+                                    <b>{ev.label}</b>
                                   </span>
                                 ))}
                               </div>
@@ -422,9 +438,16 @@ export default function ChainMonitorPage() {
                             )}
                           </td>
 
-                          <td className="cm-mono">{t.보낸주소 ? 짧게(t.보낸주소, 8) : "-"}</td>
-                          <td className="cm-mono">{t.받은주소 ? 짧게(t.받은주소, 8) : "-"}</td>
-                          <td className="cm-mono">{t.가스사용량 || "-"}</td>
+                          <td className="cm-mono">
+                            {t.요청자주소 ? 짧게(t.요청자주소, 8) : "-"}
+                          </td>
+
+                          <td
+                            className="cm-mono"
+                            title={t.가스사용량 ? `gasUsed: ${t.가스사용량}` : ""}
+                          >
+                            {t.수수료ETH ? `${t.수수료ETH} ETH` : "-"}
+                          </td>
                         </tr>
                       ))
                     )}
@@ -487,9 +510,7 @@ export default function ChainMonitorPage() {
           </div>
         </div>
 
-        <div className="cm-footer">
-          끝: 이제 “이벤트”는 트랜잭션 옆에서 바로 확인할 수 있어요.
-        </div>
+        <div className="cm-footer">끝: 이제 “처리 결과”와 “수수료(ETH)”를 한눈에 볼 수 있어요.</div>
       </div>
     </Layout>
   );
